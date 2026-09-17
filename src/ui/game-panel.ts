@@ -32,8 +32,8 @@ export function createGamePanel(options: GamePanelOptions): GamePanelHandle {
       <p class="panel__sub" data-role="occupied"></p>
     </header>
     <div data-role="phase-host"></div>
-    <details class="earnings-host" data-role="earnings" open>
-      <summary>本航程收益一览（每轮更新）</summary>
+    <details class="earnings-host" data-role="earnings">
+      <summary>本航程收益一览（每轮更新）· 点开查看</summary>
       <div data-role="earnings-body"></div>
     </details>
     <section class="players">
