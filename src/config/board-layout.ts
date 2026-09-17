@@ -48,15 +48,21 @@ export const MOVEMENT_ROUNDS = 3;
 export interface GoodDef {
   readonly id: GoodId;
   readonly name: string;
-  /** 骰子颜色索引。**颜色对应关系待核对** */
+  /** 骰子 / 货物 / 价值指示物 / 股份卡共用的颜色（英文名，供 UI 与调试） */
+  readonly color: string;
+  /** 骰子颜色索引。颜色对应关系见 docs/game-flow.md §5.3 的来源说明 */
   readonly dieIndex: number;
 }
 
+/**
+ * 四种货物。颜色来自官方规则书 Abb. 2b 的「开局黑市状态」插图：
+ * 棕=肉豆蔻、蓝=丝绸、米黄=人参、绿=玉。
+ */
 export const GOODS: readonly GoodDef[] = [
-  { id: 'nutmeg', name: '肉豆蔻', dieIndex: 0 },
-  { id: 'silk', name: '丝绸', dieIndex: 1 },
-  { id: 'jade', name: '玉', dieIndex: 2 },
-  { id: 'ginseng', name: '人参', dieIndex: 3 },
+  { id: 'nutmeg', name: '肉豆蔻', color: 'brown', dieIndex: 0 },
+  { id: 'silk', name: '丝绸', color: 'blue', dieIndex: 1 },
+  { id: 'ginseng', name: '人参', color: 'tan', dieIndex: 2 },
+  { id: 'jade', name: '玉', color: 'green', dieIndex: 3 },
 ];
 
 export function getGood(id: GoodId): GoodDef {
@@ -74,10 +80,11 @@ export function goodName(id: GoodId): string {
 /**
  * 黑市价格轨的刻度。
  *
- * **待核对**：规则只举例「从０到５」，未列出完整刻度。
- * 这里按 5 元一档、终点 30 元（= GAME_END_PRICE）推定。
+ * **已核实**：官方规则书（Zoch Verlag, 2005）Abb. 2b「开局时黑市状态」插图明确画出
+ * 五行数值 `30 / 20 / 10 / 5 / 0`，四种货物各一列，指示物起始位在 0 下方（价值按 0 计）。
+ * 即一共 5 档，走上 4 次到达 30 元即结束。
  */
-export const PRICE_TRACK: readonly number[] = [0, 5, 10, 15, 20, 25, 30];
+export const PRICE_TRACK: readonly number[] = [0, 5, 10, 20, 30];
 
 // ---------------------------------------------------------------- 格位
 
@@ -92,14 +99,17 @@ export interface SpotDef {
 /**
  * 货仓板块（ware load）。每艘船装一块，共 3 块上船、1 块留在岸上。
  *
- * 规则要点：
- * - 「对人参，丝绸，以及肉豆蔻，船上有三个同伙空格，而对于玉，船上有四个同伙空格。」
- * - 「他应该选择该货仓中最低价的空的空格」→ spaces 必须按 cost 升序排列
- * - 「每个货仓上有可分配的利润，由同伙均分」→ totalReward 由格位上的小弟**均分**
+ * 规则要点（官方规则书 p.4 / p.7 原文）：
+ * - 「For ginseng, silk, and nutmeg, there are three accomplice spaces, and for jade there are four」
+ * - 「he should choose the lowest-priced empty space of the desired ware」
+ *   → spaces 必须按 cost 升序；这里的"价"就是**放置费**（已由规则书原文确认）
+ * - 「On each ware load is the amount of profit to be earned, which the accomplices share」
+ *   → totalReward 是整块货仓的总利润，由格位上的小弟**平分**
  *
- * **待核对**：各格位费用与板块总利润均为占位值。
- * 另有一处歧义待确认：规则里「最低价的空格」的"价"指**放置费**还是别的，
- * 本实现按「放置费」理解（这样先放的人付得少，后放的人付得多，形成压力）。
+ * **已核实**：费用读自官方规则书 p.4 的货仓实物照（肉豆蔻 2/3/4、丝绸 3/4/5、
+ * 人参 1/2/3、玉 3/4/5/5）；总利润 24 与 36 另经规则书正文互证
+ * （「nutmeg punt of 24 PESOS」「the 36 PESO profit」）。
+ * 30（丝绸）与 18（人参）为实物照读数，规则书正文未直接写出。
  */
 export interface WareLoadDef {
   readonly good: GoodId;
@@ -113,39 +123,40 @@ export const WARE_LOADS: readonly WareLoadDef[] = [
   {
     good: 'nutmeg',
     spaces: [
-      { cost: 1, reward: 0 },
       { cost: 2, reward: 0 },
       { cost: 3, reward: 0 },
+      { cost: 4, reward: 0 },
     ],
-    totalReward: 8,
+    totalReward: 24,
   },
   {
     good: 'silk',
     spaces: [
-      { cost: 1, reward: 0 },
-      { cost: 2, reward: 0 },
-      { cost: 3, reward: 0 },
-    ],
-    totalReward: 10,
-  },
-  {
-    good: 'jade',
-    spaces: [
-      { cost: 2, reward: 0 },
       { cost: 3, reward: 0 },
       { cost: 4, reward: 0 },
       { cost: 5, reward: 0 },
     ],
-    totalReward: 20,
+    totalReward: 30,
   },
   {
     good: 'ginseng',
     spaces: [
+      { cost: 1, reward: 0 },
       { cost: 2, reward: 0 },
       { cost: 3, reward: 0 },
-      { cost: 4, reward: 0 },
     ],
-    totalReward: 15,
+    totalReward: 18,
+  },
+  {
+    good: 'jade',
+    spaces: [
+      { cost: 3, reward: 0 },
+      { cost: 4, reward: 0 },
+      { cost: 5, reward: 0 },
+      // 官方实体板上玉的最后两格同为 5，不是严格递增
+      { cost: 5, reward: 0 },
+    ],
+    totalReward: 36,
   },
 ];
 
@@ -156,38 +167,47 @@ export function getWareLoad(good: GoodId): WareLoadDef {
 }
 
 /**
- * 港口空格 A/B/C：按第 1/2/3 艘抵达的船分配。
- * 报酬由海港钱箱支付。
+ * 港口空格 A/B/C：按第 1/2/3 艘抵达的船分配；报酬由海港钱箱支付。
  *
- * **待核对**：cost 与 reward 均为占位值。
+ * **已核实**：读自官方规则书 p.4 的港口实物照（深色圈=报酬、黄圈=费用）——
+ * A 旁 `6`+`4`、B 旁 `8`+`3`、C 旁 `15`+`2`。
+ * 正文互证：fig.13a「2 punts reached the destination port → ORANGE earns 6, RED earns 8」。
+ *
+ * 注意 A/B/C 是**递增的到达门槛**：A 只要有 ≥1 艘抵达就赔、B 要 ≥2、C 要 ≥3，
+ * 所以 C 的放置费最低（2）而报酬最高（15）。本实现按「第 N 艘停在空格 N-1」判定，
+ * 与门槛写法等价。
  */
 export const PORT_SPACES: readonly SpotDef[] = [
-  { cost: 5, reward: 30 },
-  { cost: 3, reward: 20 },
-  { cost: 2, reward: 10 },
+  { cost: 4, reward: 6 },
+  { cost: 3, reward: 8 },
+  { cost: 2, reward: 15 },
 ];
 
 /**
- * 修船场空格 A/B/C：按第 1/2/3 艘进厂的船分配。
- * 赔偿由**保险仲介者**支付（无人担任时由海港钱箱负担）。
+ * 修船场空格 A/B/C：按第 1/2/3 艘进厂的船分配；赔偿由**保险仲介者**支付
+ * （无人担任时由海港钱箱负担）。
  *
- * **待核对**：cost 与 reward 均为占位值。
+ * **已核实**：与港口**完全相同**（A `6`+`4`、B `8`+`3`、C `15`+`2`），
+ * 读自官方规则书 p.4 的修船场实物照；正文互证 fig.13b（船厂 A 付 6）与 fig.14（付 6 与 8）。
  */
 export const SHIPYARD_SPACES: readonly SpotDef[] = [
-  { cost: 3, reward: 15 },
-  { cost: 2, reward: 10 },
-  { cost: 1, reward: 5 },
+  { cost: 4, reward: 6 },
+  { cost: 3, reward: 8 },
+  { cost: 2, reward: 15 },
 ];
 
 /**
  * 海盗船上的 2 个格位。
- * 规则：「海盗船上有两个同伙空格。第一个使用海盗空格的同伙占据第一格，成为海盗船的船长。」
  *
- * **待核对**：费用为占位值。船长位更贵（登船时有优先权）。
+ * 规则：「The first to use the pirate space will take the front space and become the captain.
+ * If the captain space is occupied, the player places his accomplice in the second space.」
+ * → 与货仓一样是**强制顺序**，不能自由挑。
+ *
+ * **已核实**：两格费用都是 **5**（官方规则书 p.4 海盗船实物照，两个黄圈都印 5）。
  */
 export const PIRATE_SPACES: readonly SpotDef[] = [
-  { cost: 3, reward: 0 },
-  { cost: 2, reward: 0 },
+  { cost: 5, reward: 0 },
+  { cost: 5, reward: 0 },
 ];
 
 /**
@@ -216,17 +236,16 @@ export const INSURANCE_FEE = 10;
 /**
  * 棋盘印刷数值的可信度。
  *
- * - `verified`：已对照实物棋盘或官方规则书核实
- * - `placeholder`：**无可靠来源**，按规则文字推定的占位值
+ * - `verified`：已对照官方规则书或实物棋盘核实
+ * - `placeholder`：无可靠来源，按规则文字推定的占位值
  *
- * 当前为 `placeholder`：港口/修船场报酬、货仓费用与利润、价格轨刻度都缺少可靠来源。
- * UI 会据此显示醒目提示，避免把推定值误当成原版数值。
- *
- * 核实后请把这里改成 `verified`，并在 docs/design-v1.md §5 更新来源。
+ * 当前为 `verified`。核实依据：Zoch Verlag 官方英文规则书（©2005）内的棋盘实物照与正文例子，
+ * 详见 docs/game-flow.md §5.3。**除丝绸/人参的货仓总利润（30/18）只有实物照读数外，
+ * 其余数值都有正文互证。**
  */
-export const PRINTED_VALUES_PROVENANCE: 'verified' | 'placeholder' = 'placeholder';
+export const PRINTED_VALUES_PROVENANCE: 'verified' | 'placeholder' = 'verified';
 
-/** 只有价格轨刻度有出处（规则举例「从０到５」），其余全部待核对 */
+/** 占位值警示；数值已核实时返回 null */
 export function printedValuesWarning(): string | null {
   if (PRINTED_VALUES_PROVENANCE === 'verified') return null;
   return '棋盘印刷数值（港口/修船场报酬、货仓费用与利润）尚无可靠来源，当前为推定占位值，结算结果不代表原版游戏。';
