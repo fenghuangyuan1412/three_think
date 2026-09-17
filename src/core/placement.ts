@@ -14,12 +14,13 @@
  * 本文件是纯函数，依赖一个最小的 PlacementContext 而不是整个 GameState，
  * 以避免与 game.ts 形成循环依赖。
  */
-import { getWareLoad, INSURANCE_COST, PIRATE_SPACES } from '../config/board-layout';
+import { getWareLoad, INSURANCE_COST, INSURANCE_FEE, PIRATE_SPACES } from '../config/board-layout';
 import type { Player, PlayerId } from './types';
 import {
   isAtSea,
   spotCost,
   spotKey,
+  spotReward,
   type BoatState,
   type Placement,
   type SpotRef,
@@ -256,8 +257,120 @@ export function applyPlacement(
 
 /** 保险处放置时立即取得的金额（规则：从港口钱箱得到 10 元） */
 export function insuranceFee(spot: SpotRef): number {
-  return spot.kind === 'insurance' && INSURANCE_COST === 0 ? 10 : 0;
+  return spot.kind === 'insurance' && INSURANCE_COST === 0 ? INSURANCE_FEE : 0;
 }
+
+// ---------------------------------------------------------------- 收益预估
+
+export interface SpotPreview {
+  /** 现在放上去要付多少 */
+  readonly cost: number;
+  /**
+   * 达成条件时能拿多少。
+   * 货仓是**均分**，所以这里给的是「你现在放上去、最终只有这几位小弟时」的份额；
+   * 后面还有人来会变少。
+   */
+  readonly potential: number;
+  /** 收益条件（中文，直接给玩家看） */
+  readonly condition: string;
+  /** 是否是均分（货仓 / 海盗劫掠） */
+  readonly shared: boolean;
+  /** 额外提示 */
+  readonly note?: string;
+}
+
+/**
+ * 某个格位此刻的「花费 / 可能收益」预估。
+ *
+ * 这是给玩家决策用的，不参与结算 —— 结算仍然由 payout.ts 按实际结果算。
+ * 「收益」是**当前信息下的上限**：货仓按「只有现有小弟平分」估，后来者会让它变少。
+ */
+export function previewSpot(ctx: PlacementContext, spot: SpotRef): SpotPreview {
+  const cost = costOf(ctx, spot);
+
+  switch (spot.kind) {
+    case 'hold': {
+      const boat = ctx.boats[spot.boat];
+      const good = boat?.good ?? null;
+      if (!good) {
+        return { cost, potential: 0, condition: '该船没有装货', shared: true };
+      }
+      const load = getWareLoad(good);
+      const occupants = ctx.placements.filter(
+        (p) => p.spot.kind === 'hold' && p.spot.boat === spot.boat,
+      ).length;
+      const shares = occupants + 1;
+      const name = GOOD_NAMES[good];
+      return {
+        cost,
+        potential: Math.floor(load.totalReward / shares),
+        condition: `${name}货仓随船抵达马尼拉港`,
+        shared: true,
+        note:
+          occupants > 0
+            ? `货仓总值 ${load.totalReward} 元，与你平分的话共 ${shares} 人，每人 ${Math.floor(load.totalReward / shares)} 元（再来人会更少）`
+            : `货仓总值 ${load.totalReward} 元，目前只有你，全拿；再来人会平分`,
+      };
+    }
+
+    case 'port': {
+      const reward = spotReward(spot);
+      return {
+        cost,
+        potential: reward,
+        condition: `本航程至少有 ${spot.slot + 1} 艘船抵达港口（港口空格 ${'ABC'[spot.slot] ?? '?'}）`,
+        shared: false,
+        note: '报酬由海港钱箱支付',
+      };
+    }
+
+    case 'shipyard': {
+      const reward = spotReward(spot);
+      return {
+        cost,
+        potential: reward,
+        condition: `本航程至少有 ${spot.slot + 1} 艘船进修船场（修船场空格 ${'ABC'[spot.slot] ?? '?'}）`,
+        shared: false,
+        note: '赔偿由保险仲介者支付；无人担任时由钱箱负担',
+      };
+    }
+
+    case 'pirate':
+      return {
+        cost,
+        potential: 0,
+        condition: '有船在本航程结束时停在第 13 格，即可登船 / 劫掠它的货物',
+        shared: true,
+        note: '劫掠所得由船上的海盗均分；若走的是登船路线，船平安进港则与货仓小弟一起平分',
+      };
+
+    case 'pilot':
+      return {
+        cost,
+        potential: 0,
+        condition: '无直接收益：在最后一次移动前推动或拉回船只',
+        shared: false,
+        note: spot.size === 'small' ? '小领航员：1 艘船移动 1 格' : '大领航员：1 艘船移动 2 格，或 2 艘各 1 格',
+      };
+
+    case 'insurance':
+      return {
+        cost,
+        potential: INSURANCE_FEE,
+        condition: `放置时立即取得 ${INSURANCE_FEE} 元`,
+        shared: false,
+        note: '但之后本航程所有修船赔偿都由你支付',
+      };
+  }
+}
+
+/** 货物中文名（避免 core 反向依赖配置文件的查找函数） */
+const GOOD_NAMES: Record<string, string> = {
+  nutmeg: '肉豆蔻',
+  silk: '丝绸',
+  ginseng: '人参',
+  jade: '玉',
+};
 
 /**
  * 本段航程的放置轮转顺序：从港务长开始顺时针。
