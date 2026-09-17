@@ -40,7 +40,7 @@ function resolve(options: LabelOptions): Resolved {
   return { ...DEFAULTS, ...options };
 }
 
-/** 生成（或复用）一张文字贴图 */
+/** 生成（或复用）一张文字贴图。`text` 支持用 `\n` 换行 */
 export function createTextTexture(text: string, options: LabelOptions = {}): THREE.CanvasTexture {
   const o = resolve(options);
   const key = `${text}|${o.fontSize}|${o.color}|${o.background}|${o.bold}`;
@@ -53,14 +53,20 @@ export function createTextTexture(text: string, options: LabelOptions = {}): THR
   const hasBackground = o.background !== 'transparent';
   const pad = Math.round(o.fontSize * (hasBackground ? 0.3 : 0.08));
 
+  const lines = text.split('\n');
+  const lineHeight = Math.ceil(o.fontSize * 1.18);
+
   const measureCanvas = document.createElement('canvas');
   const measureCtx = measureCanvas.getContext('2d');
   if (!measureCtx) throw new Error('无法创建 2D 画布上下文，文字标签无法生成');
   measureCtx.font = font;
-  const textWidth = Math.ceil(measureCtx.measureText(text).width);
+  const textWidth = Math.max(...lines.map((line) => Math.ceil(measureCtx.measureText(line).width)), 1);
 
   const width = textWidth + pad * 2;
-  const height = Math.ceil(o.fontSize * (hasBackground ? 1.35 : 1.06)) + pad * 2;
+  const height =
+    hasBackground && lines.length === 1
+      ? Math.ceil(o.fontSize * 1.35) + pad * 2
+      : lineHeight * lines.length + pad * 2;
 
   const canvas = document.createElement('canvas');
   canvas.width = width;
@@ -68,7 +74,7 @@ export function createTextTexture(text: string, options: LabelOptions = {}): THR
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('无法创建 2D 画布上下文，文字标签无法生成');
 
-  if (o.background !== 'transparent') {
+  if (hasBackground) {
     ctx.fillStyle = o.background;
     const r = Math.min(height / 2, 18);
     ctx.beginPath();
@@ -89,7 +95,11 @@ export function createTextTexture(text: string, options: LabelOptions = {}): THR
   ctx.fillStyle = o.color;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(text, width / 2, height / 2);
+  const blockHeight = lineHeight * lines.length;
+  lines.forEach((line, i) => {
+    const y = (height - blockHeight) / 2 + lineHeight * (i + 0.5);
+    ctx.fillText(line, width / 2, y);
+  });
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;

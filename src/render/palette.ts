@@ -17,6 +17,11 @@ export const PALETTE = {
   island: 0x6f5c3c,
   /** 保险处建筑 */
   building: 0x5d4a34,
+  /**
+   * 码头 / 修船场的台面（浅木色）。
+   * 特意用浅色：格位上要印深色数字，深色木台上会看不见（实测踩过）。
+   */
+  dock: 0xb09468,
   parchment: 0xcbb68e,
   parchmentAlt: 0xbfa87c,
   laneLine: 0x6d5c40,
