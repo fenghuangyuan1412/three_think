@@ -23,7 +23,7 @@ import {
   type GameState,
   type Intent,
 } from '../core/game';
-import { availableSpots, costOf, mustBeBlind } from '../core/placement';
+import { availableSpots, mustBeBlind, previewSpot } from '../core/placement';
 import type { GoodId, PlayerId } from '../core/types';
 import { spotLabel, type SpotRef } from '../core/voyage';
 
@@ -339,12 +339,30 @@ function placementView(ctx: PhaseViewContext): HTMLElement {
 
   const list = el('div', 'spot-list');
   for (const spot of spots) {
-    const cost = costOf(ctxPlacement, spot);
-    const btn = button(spotText(state, spot), 'spot', () =>
-      emit({ type: 'place', playerId: who, spot }),
+    const preview = previewSpot(ctxPlacement, spot);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'spot spot--rich';
+    btn.title = preview.note ?? preview.condition;
+
+    const main = el('span', 'spot__main');
+    main.appendChild(el('span', 'spot__name', spotText(state, spot)));
+    main.appendChild(
+      el(
+        'span',
+        'spot__money',
+        preview.cost === 0
+          ? preview.potential > 0
+            ? `免费 → 得 ${preview.potential}`
+            : '免费'
+          : `付 ${preview.cost} → ${preview.potential > 0 ? `得 ${preview.potential}` : '无直接收益'}`,
+      ),
     );
-    btn.appendChild(el('span', 'spot__cost', cost === 0 ? '免费' : `${cost} 元`));
+    btn.appendChild(main);
+    btn.appendChild(el('span', 'spot__cond', preview.condition));
     if (blind && spot.kind === 'insurance') btn.disabled = true;
+
+    btn.addEventListener('click', () => emit({ type: 'place', playerId: who, spot }));
     list.appendChild(btn);
   }
   box.appendChild(list);

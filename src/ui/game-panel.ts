@@ -10,6 +10,7 @@ import type { GameState, Intent } from '../core/game';
 import { sharePrice } from '../core/game';
 import type { Player } from '../core/types';
 import { occupiedSpotSummary, phaseTitle, renderPhaseView } from './phase-views';
+import { renderEarningsTable } from './earnings';
 
 export interface GamePanelOptions {
   readonly onIntent: (intent: Intent) => void;
@@ -31,6 +32,10 @@ export function createGamePanel(options: GamePanelOptions): GamePanelHandle {
       <p class="panel__sub" data-role="occupied"></p>
     </header>
     <div data-role="phase-host"></div>
+    <details class="earnings-host" data-role="earnings" open>
+      <summary>本航程收益一览（每轮更新）</summary>
+      <div data-role="earnings-body"></div>
+    </details>
     <section class="players">
       <h3 class="section-title">玩家</h3>
       <ul class="player-list" data-role="players"></ul>
@@ -64,6 +69,8 @@ export function createGamePanel(options: GamePanelOptions): GamePanelHandle {
   const phaseEl = q<HTMLHeadingElement>('phase');
   const occupiedEl = q<HTMLParagraphElement>('occupied');
   const phaseHost = q<HTMLDivElement>('phase-host');
+  const earningsHost = q<HTMLDetailsElement>('earnings');
+  const earningsBody = q<HTMLDivElement>('earnings-body');
   const playersEl = q<HTMLUListElement>('players');
   const logEl = q<HTMLOListElement>('log');
 
@@ -153,6 +160,10 @@ export function createGamePanel(options: GamePanelOptions): GamePanelHandle {
       occupiedEl.textContent = occupiedSpotSummary(state);
 
       phaseHost.replaceChildren(renderPhaseView({ state, emit: options.onIntent, error }));
+
+      // 收益一览：每轮都按当前状态重算，让玩家知道"现在放上去能拿多少"
+      earningsBody.replaceChildren(renderEarningsTable(state));
+      earningsHost.hidden = state.phase === 'game-over';
 
       const actor = currentActor(state);
       playersEl.replaceChildren(...state.players.map((p) => renderPlayer(p, state, p.id === actor)));

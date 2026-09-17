@@ -871,6 +871,131 @@ body {
   color: var(--muted);
 }
 
+/* ----------------------------------------------------- 收益一览 */
+
+.earnings-host {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(9, 32, 41, 0.6);
+  padding: 10px 12px;
+}
+
+.earnings-host > summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--gold-dim);
+}
+
+.earnings {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.earnings__block {
+  display: grid;
+  gap: 4px;
+}
+
+.earnings__title {
+  margin: 0 0 2px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.earnings__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  flex-wrap: wrap;
+}
+
+.earnings__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--cream);
+}
+
+.earnings__name--wide {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.earnings__val {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--gold);
+  font-weight: 600;
+}
+
+.earnings__tag {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.earnings__tag.is-ok {
+  border-color: #2b5a4b;
+  background: rgba(99, 183, 159, 0.16);
+  color: #a9ddcb;
+}
+
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  display: inline-block;
+}
+
+.dot--brown { background: #8a5a34; }
+.dot--blue { background: #4a6fbe; }
+.dot--tan { background: #cbb47c; }
+.dot--green { background: #35996a; }
+
+/* -------------------------------------------------- 带收益的格位按钮 */
+
+.spot--rich {
+  display: grid;
+  gap: 3px;
+  align-items: stretch;
+}
+
+.spot__main {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.spot__name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.spot__money {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--gold);
+  white-space: nowrap;
+}
+
+.spot__cond {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
 /* --------------------------------------------------------------- 窄屏 */
 @media (max-width: 900px) {
   #app {
