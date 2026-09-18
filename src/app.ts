@@ -3,9 +3,16 @@
  *
  * 分层的粘合点就在这里 —— 它是唯一同时认识三层的文件，
  * 而 core / render / ui 三者之间互不依赖（agent.md §3）。
+ *
+ * 两种运行形态：
+ * - 本地热座：applyIntent 在本机跑（原路径）。
+ * - 联机：core 在服务端权威执行，本机只发意图、收快照、照单渲染。
  */
 import { GOODS } from './config/board-layout';
 import { applyIntent, createGame, startVoyage, type GameState, type Intent } from './core/game';
+import type { PlayerId } from './core/types';
+import { NetClient } from './net/client';
+import type { RoomSnapshot } from './net/protocol';
 import { createAccomplices } from './render/accomplices';
 import { createBoard } from './render/board';
 import { installDevHook } from './render/dev-hook';
@@ -13,7 +20,8 @@ import { disposeLabelTextures } from './render/labels';
 import { createScene } from './render/scene';
 import { createGamePanel, type GamePanelHandle } from './ui/game-panel';
 import { createHud } from './ui/hud';
-import { createStartScreen } from './ui/start-screen';
+import { createLobby, type LobbyHandle } from './ui/lobby';
+import { createStartScreen, type OnlineCredentials, type StartScreenHandle } from './ui/start-screen';
 
 export function bootApp(root: HTMLElement): void {
   root.replaceChildren();
@@ -41,14 +49,10 @@ export function bootApp(root: HTMLElement): void {
   root.appendChild(hud.element);
   scene.onStats((stats) => hud.update(stats));
 
-  let state: GameState | null = null;
-  let panel: GamePanelHandle | null = null;
-
   /** 把 core 的状态同步到画面 */
   function syncView(next: GameState, immediate = false): void {
     board.syncBoats(next.boats, immediate);
 
-    next.players.forEach((player) => void player);
     accomplices.sync(next.placements, next.players, board, next.boats);
 
     // 价格标记：GOODS 的下标与价格轨的行一一对应
@@ -57,35 +61,173 @@ export function bootApp(root: HTMLElement): void {
     });
   }
 
-  function handleIntent(intent: Intent): void {
-    if (!state || !panel) return;
-    const outcome = applyIntent(state, intent);
-    if (!outcome.ok) {
-      panel.render(state, outcome.error.message);
-      return;
+  // ---------------------------------------------------------------- 开始屏
+
+  let startScreen: StartScreenHandle | null = null;
+
+  function showStartScreen(): void {
+    const screen = createStartScreen({
+      onStart: startHotseat,
+      onOnlineLogin: startOnline,
+    });
+    startScreen = screen;
+    root.appendChild(screen.element);
+  }
+
+  function leaveStartScreen(): void {
+    startScreen?.dispose();
+    startScreen = null;
+  }
+
+  // ---------------------------------------------------------------- 热座
+
+  function startHotseat(playerCount: number, names: readonly string[]): void {
+    leaveStartScreen();
+
+    let state: GameState | null = null;
+    let panel: GamePanelHandle | null = null;
+
+    function handleIntent(intent: Intent): void {
+      if (!state || !panel) return;
+      const outcome = applyIntent(state, intent);
+      if (!outcome.ok) {
+        panel.render(state, outcome.error.message);
+        return;
+      }
+      state = outcome.state;
+      syncView(state, intent.type === 'master-launch' || intent.type === 'master-load');
+      panel.render(state, null);
     }
-    state = outcome.state;
-    syncView(state, intent.type === 'master-launch' || intent.type === 'master-load');
+
+    const seed = Math.floor(Math.random() * 1_000_000);
+    hud.setSeed(seed);
+
+    state = startVoyage(createGame({ playerCount, names, seed }));
+    syncView(state, true);
+
+    panel = createGamePanel({ onIntent: handleIntent });
+    root.appendChild(panel.element);
     panel.render(state, null);
   }
 
-  const startScreen = createStartScreen({
-    onStart(playerCount, names) {
-      startScreen.dispose();
+  // ---------------------------------------------------------------- 联机
 
-      const seed = Math.floor(Math.random() * 1_000_000);
-      hud.setSeed(seed);
+  function startOnline(creds: OnlineCredentials): void {
+    sessionStorage.setItem('manila.online-creds', JSON.stringify(creds));
 
-      state = startVoyage(createGame({ playerCount, names, seed }));
-      syncView(state, true);
+    let panel: GamePanelHandle | null = null;
+    let lobby: LobbyHandle | null = null;
+    let bar: HTMLElement | null = null;
+    let mySeat: PlayerId | null = null;
+    let connectionOk = false;
+    let lastSnapshot: RoomSnapshot | null = null;
+    let notice: string | null = null;
 
-      panel = createGamePanel({ onIntent: handleIntent });
-      root.appendChild(panel.element);
-      panel.render(state, null);
-    },
-  });
+    const net = new NetClient(creds.url, creds.account, creds.password, {
+      onLoginOk: () => leaveStartScreen(),
+      onConnection: (ok) => {
+        connectionOk = ok;
+        redraw();
+      },
+      onError: (message) => {
+        notice = message;
+        redraw();
+      },
+      onSnapshot: (snapshot) => {
+        notice = null;
+        lastSnapshot = snapshot;
+        mySeat = snapshot.seats.find((s) => s.account === creds.account)?.seat ?? null;
 
-  root.appendChild(startScreen.element);
+        if (snapshot.roomPhase === 'lobby' || !snapshot.state) {
+          panel?.dispose();
+          panel = null;
+          bar?.remove();
+          bar = null;
+          ensureLobby();
+          lobby!.render(snapshot, connectionOk, notice);
+          notice = null;
+          return;
+        }
+
+        disposeLobby();
+        const state = snapshot.state;
+        if (!panel) {
+          hud.setSeed(state.seed);
+          panel = createGamePanel({
+            you: mySeat,
+            onIntent: (intent) => net.send({ type: 'intent', intent }),
+          });
+          root.appendChild(panel.element);
+          syncView(state, true);
+        }
+        syncView(state);
+        panel.render(state, notice);
+        notice = null;
+        renderBar(snapshot);
+      },
+    });
+
+    function ensureLobby(): void {
+      lobby ??= createLobby({
+        myAccount: creds.account,
+        onStart: () => net.send({ type: 'start' }),
+        onReset: () => net.send({ type: 'reset' }),
+      });
+      if (!lobby.element.isConnected) root.appendChild(lobby.element);
+    }
+
+    function disposeLobby(): void {
+      lobby?.dispose();
+      lobby = null;
+    }
+
+    /** 联机顶栏：我是谁、连接状态；局终时房主可重开 */
+    function renderBar(snapshot: RoomSnapshot): void {
+      if (!bar) {
+        bar = document.createElement('div');
+        bar.className = 'online-bar';
+        root.appendChild(bar);
+      }
+      bar.replaceChildren();
+
+      const me = snapshot.seats.find((s) => s.account === creds.account);
+      const who = document.createElement('span');
+      who.textContent = `联机 · ${me?.displayName ?? creds.account}` +
+        (me?.seat ? ` · 座位 ${me.seat}` : ' · 旁观') +
+        (snapshot.hostAccount === creds.account ? ' · 房主' : '');
+      bar.appendChild(who);
+
+      const status = document.createElement('span');
+      status.className = connectionOk ? 'online-bar__ok' : 'online-bar__bad';
+      status.textContent = connectionOk ? '已连接' : '断线重连中…';
+      bar.appendChild(status);
+
+      if (snapshot.roomPhase !== 'lobby' && snapshot.hostAccount === creds.account) {
+        const reset = document.createElement('button');
+        reset.type = 'button';
+        reset.className = 'btn btn--sm';
+        reset.textContent = snapshot.roomPhase === 'over' ? '回到大厅重开' : '放弃本局回大厅';
+        reset.addEventListener('click', () => net.send({ type: 'reset' }));
+        bar.appendChild(reset);
+      }
+    }
+
+    function redraw(): void {
+      if (!lastSnapshot) {
+        if (!connectionOk) notice ??= '正在连接服务器…';
+        return;
+      }
+      if (lobby && lastSnapshot.roomPhase === 'lobby') {
+        lobby.render(lastSnapshot, connectionOk, notice);
+        notice = null;
+      } else if (panel && lastSnapshot.state) {
+        panel.render(lastSnapshot.state, notice);
+        notice = null;
+      }
+    }
+  }
+
+  showStartScreen();
 
   // 页面卸载时释放贴图与材质，避免显存泄漏
   window.addEventListener(

@@ -8,12 +8,14 @@ import { GOODS } from '../config/board-layout';
 import { creditLimit } from '../core/bidding';
 import type { GameState, Intent } from '../core/game';
 import { sharePrice } from '../core/game';
-import type { Player } from '../core/types';
+import type { Player, PlayerId } from '../core/types';
 import { occupiedSpotSummary, phaseTitle, renderPhaseView } from './phase-views';
 import { renderEarningsTable } from './earnings';
 
 export interface GamePanelOptions {
   readonly onIntent: (intent: Intent) => void;
+  /** 联机模式：本设备代表的座位；null / 缺省 = 热座 */
+  readonly you?: PlayerId | null;
 }
 
 export interface GamePanelHandle {
@@ -159,7 +161,9 @@ export function createGamePanel(options: GamePanelOptions): GamePanelHandle {
       phaseEl.textContent = phaseTitle(state);
       occupiedEl.textContent = occupiedSpotSummary(state);
 
-      phaseHost.replaceChildren(renderPhaseView({ state, emit: options.onIntent, error }));
+      phaseHost.replaceChildren(
+        renderPhaseView({ state, emit: options.onIntent, error, you: options.you ?? null }),
+      );
 
       // 收益一览：每轮都按当前状态重算，让玩家知道"现在放上去能拿多少"
       earningsBody.replaceChildren(renderEarningsTable(state));

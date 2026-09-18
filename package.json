@@ -1,7 +1,7 @@
 {
   "name": "three-think",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.1.0",
   "type": "module",
   "description": "融合多种桌游玩法的 3D 桌游。第一版：马尼拉式竞标。",
   "scripts": {
@@ -10,13 +10,19 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "server": "tsx server/main.ts",
+    "typecheck:server": "tsc -p server/tsconfig.json"
   },
   "dependencies": {
-    "three": "^0.186.0"
+    "three": "^0.186.0",
+    "ws": "^8.21.3"
   },
   "devDependencies": {
+    "@types/node": "^26.6.1",
     "@types/three": "^0.186.0",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.23.13",
     "typescript": "^7.0.2",
     "vite": "^8.3.0",
     "vitest": "^5.0.1"

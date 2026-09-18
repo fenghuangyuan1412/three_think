@@ -7,6 +7,7 @@ export default defineConfig({
   build: {
     target: 'es2022',
     outDir: 'dist',
-    sourcemap: true,
+    // 公网静态托管会连带 .js.map 一起暴露完整 TS 源码，且体积是产物的 5 倍
+    sourcemap: false,
   },
 });

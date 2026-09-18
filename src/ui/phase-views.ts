@@ -31,6 +31,12 @@ export interface PhaseViewContext {
   readonly state: GameState;
   readonly emit: (intent: Intent) => void;
   readonly error: string | null;
+  /**
+   * 联机模式下本连接代表的座位；null = 热座（谁都能操作）。
+   * 需要指定行动者的阶段里，非行动者只看到局面与「等待某人行动」提示，
+   * 不渲染操作按钮；推进类按钮（继续）所有人可见。
+   */
+  readonly you: PlayerId | null;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -42,6 +48,17 @@ function el<K extends keyof HTMLElementTagNameMap>(
   if (className) node.className = className;
   if (text !== undefined) node.textContent = text;
   return node;
+}
+
+/** 联机门控：该阶段的操作按钮是否渲染给当前这台设备 */
+function canActHere(ctx: PhaseViewContext, actor: PlayerId | null): boolean {
+  if (ctx.you === null) return true;
+  return actor !== null && actor === ctx.you;
+}
+
+/** 非行动者看到的等待提示 */
+function waitingNote(state: GameState, actor: PlayerId | null): HTMLElement {
+  return el('p', 'hint hint--warn', `等待 ${playerName(state, actor)} 行动中…`);
 }
 
 function button(text: string, className: string, onClick: () => void): HTMLButtonElement {
@@ -154,6 +171,11 @@ function auctionView(ctx: PhaseViewContext): HTMLElement {
   turn.append(el('strong', 'kv__v kv__v--gold', playerName(state, who)));
   box.appendChild(turn);
 
+  if (!canActHere(ctx, who)) {
+    box.appendChild(waitingNote(state, who));
+    return box;
+  }
+
   const player = who ? state.players.find((p) => p.id === who) : undefined;
   const min = minLegalBid(bidding);
   const max = player ? creditLimit(player) : 0;
@@ -200,6 +222,10 @@ function buyShareView(ctx: PhaseViewContext): HTMLElement {
   const box = section(`港务长 ${playerName(state, master)} 的办事处 · 买股份`);
 
   if (!master) return box;
+  if (!canActHere(ctx, master)) {
+    box.appendChild(waitingNote(state, master));
+    return box;
+  }
 
   const player = state.players.find((p) => p.id === master);
   const pool = [...new Set(state.sharePool.map((c) => c.good))];
@@ -236,6 +262,10 @@ function loadView(ctx: PhaseViewContext): HTMLElement {
   const master = state.harborMaster;
   const box = section(`港务长 ${playerName(state, master)} 的办事处 · 装货`);
   if (!master) return box;
+  if (!canActHere(ctx, master)) {
+    box.appendChild(waitingNote(state, master));
+    return box;
+  }
 
   // 选一种不装的货，其余三种按 GOODS 顺序装到 1/2/3 航道
   const list = el('div', 'spot-list');
@@ -264,6 +294,10 @@ function launchView(ctx: PhaseViewContext): HTMLElement {
   const master = state.harborMaster;
   const box = section(`港务长 ${playerName(state, master)} 的办事处 · 放船`);
   if (!master) return box;
+  if (!canActHere(ctx, master)) {
+    box.appendChild(waitingNote(state, master));
+    return box;
+  }
 
   const inputs: HTMLInputElement[] = [];
   const sumEl = el('p', 'hint');
@@ -322,6 +356,11 @@ function placementView(ctx: PhaseViewContext): HTMLElement {
   row.append(el('span', 'kv__k', '轮到'));
   row.append(el('strong', 'kv__v kv__v--gold', playerName(state, who)));
   box.appendChild(row);
+
+  if (!canActHere(ctx, who)) {
+    box.appendChild(waitingNote(state, who));
+    return box;
+  }
 
   const ctxPlacement = placementContext(state);
   const player = state.players.find((p) => p.id === who);
@@ -416,6 +455,11 @@ function pilotView(ctx: PhaseViewContext): HTMLElement {
   row.append(el('strong', 'kv__v kv__v--gold', playerName(state, current.playerId)));
   box.appendChild(row);
 
+  if (!canActHere(ctx, current.playerId)) {
+    box.appendChild(waitingNote(state, current.playerId));
+    return box;
+  }
+
   const atSea = state.boats
     .map((b, i) => ({ b, i }))
     .filter(({ b }) => b.arrivedSlot === null && b.shipyardSlot === null);
@@ -493,6 +537,11 @@ function pirateView(ctx: PhaseViewContext): HTMLElement {
       `第 ${(info?.lane ?? boat) + 1} 航道（${info?.good ? goodName(info.good) : '空'}）被劫掠`,
     ),
   );
+
+  if (!canActHere(ctx, who)) {
+    box.appendChild(waitingNote(state, who));
+    return box;
+  }
 
   const list = el('div', 'spot-list');
   if (who) {

@@ -1,0 +1,9 @@
+{
+  "accounts": [
+    { "account": "xiaoming", "password": "REPLACE-ME", "name": "小明" },
+    { "account": "xiaohong", "password": "REPLACE-ME", "name": "小红" },
+    { "account": "xiaogang", "password": "REPLACE-ME", "name": "小刚" },
+    { "account": "xiaoli", "password": "REPLACE-ME", "name": "小李" },
+    { "account": "xiaozhou", "password": "REPLACE-ME", "name": "老周" }
+  ]
+}

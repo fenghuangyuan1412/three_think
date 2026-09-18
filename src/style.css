@@ -1029,3 +1029,103 @@ body {
     font-size: 36px;
   }
 }
+
+/* ------------------------------------------------------- 联机：模式页签 */
+.mode-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 18px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.mode-tabs__tab {
+  appearance: none;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  padding: 8px 14px 10px;
+}
+
+.mode-tabs__tab:hover {
+  color: var(--cream);
+}
+
+.mode-tabs__tab.is-active {
+  color: var(--gold);
+  border-bottom-color: var(--gold);
+}
+
+.text-input {
+  background: var(--sea-900);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--cream);
+  font: inherit;
+  font-size: 14px;
+  padding: 8px 10px;
+  width: 100%;
+}
+
+.text-input:focus-visible {
+  border-color: var(--gold-dim);
+  outline: none;
+}
+
+.online-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* -------------------------------------------------------------- 大厅 */
+.lobby-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+}
+
+.lobby-seat {
+  align-items: center;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.lobby-seat .player__name {
+  flex: 1;
+  font-size: 14px;
+}
+
+/* -------------------------------------------------------- 联机顶栏 */
+.online-bar {
+  align-items: center;
+  background: color-mix(in srgb, var(--sea-850) 88%, transparent);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  display: flex;
+  font-size: 13px;
+  gap: 12px;
+  left: 50%;
+  padding: 6px 14px;
+  position: fixed;
+  top: 12px;
+  transform: translateX(-50%);
+  z-index: 30;
+}
+
+.online-bar__ok {
+  color: var(--ok);
+}
+
+.online-bar__bad {
+  color: var(--danger);
+}

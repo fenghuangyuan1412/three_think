@@ -349,6 +349,30 @@ export function currentAuctionPlayer(state: GameState): PlayerId | null {
   return state.bidding.order[state.bidding.cursor] ?? null;
 }
 
+/**
+ * 需要指定玩家做决定的阶段里，当前该行动的人；
+ * 推进类阶段（movement / payout / price-rise / game-over / setup）返回 null，
+ * 表示谁点「继续」都行。联机模式下服务端校验与客户端 UI 门控共用这一份真源。
+ */
+export function currentDecisionActor(state: GameState): PlayerId | null {
+  switch (state.phase) {
+    case 'auction':
+      return currentAuctionPlayer(state);
+    case 'buy-share':
+    case 'load':
+    case 'launch':
+      return state.harborMaster;
+    case 'placement':
+      return currentPlacementPlayer(state);
+    case 'pilot':
+      return currentPilot(state)?.playerId ?? null;
+    case 'pirate-destination':
+      return currentPirateDecider(state);
+    default:
+      return null;
+  }
+}
+
 // ---------------------------------------------------------------- 随机
 
 function nextRng(state: GameState): { rng: ReturnType<typeof createRng>; counter: number } {

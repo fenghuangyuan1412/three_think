@@ -50,3 +50,6 @@ assets-src/
 tmp/
 scratch/
 *.bak
+
+# 联机账号表（真实密码不入库，仓库只放 example）
+server/accounts.json
