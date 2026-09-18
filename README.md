@@ -92,13 +92,16 @@ npm run typecheck:server
 
 1. `server/accounts.example.json` 复制为 `server/accounts.json`，填入给朋友用的账号密码
    （`accounts.json` 已 gitignore，真实凭据不进仓库）。
-2. `npm run server` 启动权威服务端（默认 `ws://localhost:8787`，`PORT` 环境变量可覆盖）。
+2. `npm run build` 后 `npm run server` 启动权威服务端（默认 `ws://localhost:8787`，`PORT` 环境变量可覆盖）。
+   同一端口还直接托管 `dist/` 静态站——朋友只需要这一个地址，页面和游戏内自动连的 WebSocket 同源。
 3. 朋友们打开游戏页 → 开始屏切到「联机」→ 填服务器地址、账号、密码 → 登录进入大厅。
 4. 第一个登录的人是房主；3–5 人在线后房主点「开局」，**在线玩家被随机分配到五种颜色座位**
    （随机走带种子的 PRNG，开局种子记在对局状态里，可复现）。
 5. 对局中：轮到自己才能操作（别人的界面显示「等待 XX 行动中」）；
    移动 / 结算等公共阶段的「继续」谁都能点；有人掉线局不中断，重连后接回原座位；
    房主可随时「放弃本局回大厅」重开。
+   一个账号同时只允许一条连接：后来者接管，被顶下的页面会提示「该账号已在别处登录」并停止重连——
+   每人用一个自己的账号，不要两人合用一个。
 
 规则判定全部在服务端的 `applyIntent` 执行（agent.md §5 预留的接口），
 客户端伪造 playerId 会被直接拒收。公网穿透（Tailscale Funnel 的 WebSocket 通道）见内部部署文档，

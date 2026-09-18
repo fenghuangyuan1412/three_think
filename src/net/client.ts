@@ -11,6 +11,8 @@ export interface NetHandlers {
   readonly onError: (message: string) => void;
   /** 连接断开 / 恢复，用于顶栏提示 */
   readonly onConnection: (connected: boolean) => void;
+  /** 同一账号在别处登录，本页被顶下线（不再自动重连，避免互踢死循环） */
+  readonly onReplaced?: () => void;
 }
 
 /** 根据当前页面推导默认服务端地址：公网 https 站走 Funnel 10000，本地 dev 走 8787 */
@@ -66,8 +68,15 @@ export class NetClient {
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event: CloseEvent) => {
       if (this.closed) return;
+      if (event.code === 4000) {
+        // 被同账号的新登录顶掉：再重连就会把对方踢下来来回互抢，停在这里
+        this.closed = true;
+        this.handlers.onConnection(false);
+        this.handlers.onReplaced?.();
+        return;
+      }
       this.handlers.onConnection(false);
       window.setTimeout(() => this.open(), this.retryDelay);
       this.retryDelay = Math.min(this.retryDelay * 2, 4000);

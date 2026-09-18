@@ -125,6 +125,7 @@ export function bootApp(root: HTMLElement): void {
 
     const net = new NetClient(creds.url, creds.account, creds.password, {
       onLoginOk: () => leaveStartScreen(),
+      onReplaced: () => showReplacedNotice(),
       onConnection: (ok) => {
         connectionOk = ok;
         redraw();
@@ -166,6 +167,32 @@ export function bootApp(root: HTMLElement): void {
         renderBar(snapshot);
       },
     });
+
+    function showReplacedNotice(): void {
+      panel?.dispose();
+      panel = null;
+      disposeLobby();
+      bar?.remove();
+      bar = null;
+      const overlay = document.createElement('div');
+      overlay.className = 'overlay';
+      const card = document.createElement('div');
+      card.className = 'overlay__card';
+      const title = document.createElement('h1');
+      title.className = 'overlay__title';
+      title.textContent = '该账号已在别处登录';
+      const hint = document.createElement('p');
+      hint.className = 'overlay__subtitle';
+      hint.textContent = `账号 ${creds.account} 的另一条连接接管了座位，本页已下线。为避免互相顶号，本页不再自动重连。`;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn--primary btn--wide';
+      btn.textContent = '刷新重新登录';
+      btn.addEventListener('click', () => location.reload());
+      card.append(title, hint, btn);
+      overlay.appendChild(card);
+      root.appendChild(overlay);
+    }
 
     function ensureLobby(): void {
       lobby ??= createLobby({
