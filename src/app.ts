@@ -20,6 +20,7 @@ import { disposeLabelTextures } from './render/labels';
 import { createScene } from './render/scene';
 import { createGamePanel, type GamePanelHandle } from './ui/game-panel';
 import { createHud } from './ui/hud';
+import { createKeepAwake } from './ui/keep-awake';
 import { createLobby, type LobbyHandle } from './ui/lobby';
 import { createStartScreen, type OnlineCredentials, type StartScreenHandle } from './ui/start-screen';
 
@@ -122,6 +123,7 @@ export function bootApp(root: HTMLElement): void {
     let connectionOk = false;
     let lastSnapshot: RoomSnapshot | null = null;
     let notice: string | null = null;
+    const keepAwake = createKeepAwake();
 
     const net = new NetClient(creds.url, creds.account, creds.password, {
       onLoginOk: () => leaveStartScreen(),
@@ -142,11 +144,10 @@ export function bootApp(root: HTMLElement): void {
         if (snapshot.roomPhase === 'lobby' || !snapshot.state) {
           panel?.dispose();
           panel = null;
-          bar?.remove();
-          bar = null;
           ensureLobby();
           lobby!.render(snapshot, connectionOk, notice);
           notice = null;
+          renderBar(snapshot);
           return;
         }
 
@@ -228,6 +229,32 @@ export function bootApp(root: HTMLElement): void {
       status.className = connectionOk ? 'online-bar__ok' : 'online-bar__bad';
       status.textContent = connectionOk ? '已连接' : '断线重连中…';
       bar.appendChild(status);
+
+      if (snapshot.hostAccount === creds.account) {
+        const wake = document.createElement('button');
+        wake.type = 'button';
+        wake.className = 'btn btn--sm' + (keepAwake.isOn() ? ' btn--primary' : '');
+        wake.textContent = keepAwake.isOn() ? '保持主机唤醒：开' : '保持主机唤醒：关';
+        wake.title = keepAwake.supported
+          ? '开着本页时阻止主机电脑休眠；切到后台会自动补取锁'
+          : '当前浏览器不支持 Wake Lock，请在系统电源设置里关闭睡眠';
+        wake.addEventListener('click', () => {
+          const turningOn = !keepAwake.isOn();
+          void keepAwake.set(turningOn).then((ok) => {
+            if (turningOn && !ok && keepAwake.supported) alert('系统拒绝了唤醒锁，请改电源设置为不睡眠。');
+            renderBar(snapshot);
+          });
+        });
+        bar.appendChild(wake);
+
+        const rescue = document.createElement('button');
+        rescue.type = 'button';
+        rescue.className = 'btn btn--sm';
+        rescue.textContent = '全员重连救援';
+        rescue.title = '断开其他人的所有连接（含幽灵/卡死端），他们的页面会自动重连并接回原座位；不影响你自己的连接';
+        rescue.addEventListener('click', () => net.send({ type: 'reconnect-all' }));
+        bar.appendChild(rescue);
+      }
 
       if (snapshot.roomPhase !== 'lobby' && snapshot.hostAccount === creds.account) {
         const reset = document.createElement('button');

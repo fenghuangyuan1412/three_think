@@ -200,6 +200,20 @@ function handle(conn: Conn, msg: ClientMessage): void {
       broadcastSnapshot();
       break;
     }
+    case 'reconnect-all': {
+      if (account !== room.hostAccount()) {
+        sendError(conn, 'not-host', '只有房主可以执行全员重连。');
+        break;
+      }
+      let n = 0;
+      for (const other of conns.values()) {
+        if (other === conn) continue;
+        other.ws.terminate();
+        n += 1;
+      }
+      console.log(`房主 ${account} 触发全员重连，断开 ${n} 条连接`);
+      break;
+    }
   }
 }
 

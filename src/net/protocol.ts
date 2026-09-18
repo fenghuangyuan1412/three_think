@@ -38,7 +38,9 @@ export type ClientMessage =
   /** 玩家操作。playerId 由服务端按连接座位校验，客户端伪造无效 */
   | { readonly type: 'intent'; readonly intent: Intent }
   /** 房主回到大厅重开（局终后或局中放弃均可） */
-  | { readonly type: 'reset' };
+  | { readonly type: 'reset' }
+  /** 房主一键救援：断开除自己以外的所有连接，卡死/幽灵端会自动重连接回原座位 */
+  | { readonly type: 'reconnect-all' };
 
 export type ServerMessage =
   /** 登录成功：告知本连接代表的账号 */
