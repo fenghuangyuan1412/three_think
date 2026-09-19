@@ -9,6 +9,7 @@ import {
   PRICE_TRACK,
   printedValuesWarning,
 } from '../config/board-layout';
+import { GAME_END_PRICE } from '../config/constants';
 import { creditLimit, minLegalBid } from '../core/bidding';
 import type { PilotMove } from '../core/movement';
 import {
@@ -116,6 +117,12 @@ export function renderPhaseView(ctx: PhaseViewContext): HTMLElement {
     case 'movement':
       wrap.appendChild(movementView(ctx));
       break;
+    case 'negotiation': {
+      const box = section('谈判与转账');
+      box.appendChild(el('p', 'hint', '交易窗口已显示在屏幕中央，请在其中完成转账或确认。'));
+      wrap.appendChild(box);
+      break;
+    }
     case 'pilot':
       wrap.appendChild(pilotView(ctx));
       break;
@@ -464,54 +471,64 @@ function pilotView(ctx: PhaseViewContext): HTMLElement {
     .map((b, i) => ({ b, i }))
     .filter(({ b }) => b.arrivedSlot === null && b.shipyardSlot === null);
 
-  const list = el('div', 'spot-list');
-  const moves: { label: string; moves: PilotMove[] }[] = [];
+  const maxStep = current.size === 'small' ? 1 : 2;
+  const draft = new Map<number, number>();
 
-  if (current.size === 'small') {
-    for (const { i } of atSea) {
-      moves.push({ label: `第 ${i + 1} 航道 前进 1 格`, moves: [{ boat: i, delta: 1 }] });
-      moves.push({ label: `第 ${i + 1} 航道 后退 1 格`, moves: [{ boat: i, delta: -1 }] });
-    }
-  } else {
-    for (const { i } of atSea) {
-      moves.push({ label: `第 ${i + 1} 航道 前进 2 格`, moves: [{ boat: i, delta: 2 }] });
-      moves.push({ label: `第 ${i + 1} 航道 后退 2 格`, moves: [{ boat: i, delta: -2 }] });
-    }
-    for (const a of atSea) {
-      for (const b of atSea) {
-        if (a.i >= b.i) continue;
-        moves.push({
-          label: `第 ${a.i + 1}、${b.i + 1} 航道各前进 1 格`,
-          moves: [
-            { boat: a.i, delta: 1 },
-            { boat: b.i, delta: 1 },
-          ],
-        });
-        moves.push({
-          label: `第 ${a.i + 1}、${b.i + 1} 航道各后退 1 格`,
-          moves: [
-            { boat: a.i, delta: -1 },
-            { boat: b.i, delta: -1 },
-          ],
-        });
-      }
-    }
-  }
+  const summary = el('p', 'hint');
+  const confirm = button('执行移动', 'btn btn--primary btn--wide', () => {
+    const moves: PilotMove[] = [...draft.entries()]
+      .filter(([, delta]) => delta !== 0)
+      .map(([boat, delta]) => ({ boat, delta }));
+    emit({ type: 'pilot-move', playerId: current.playerId, moves });
+  });
 
-  for (const option of moves) {
-    list.appendChild(
-      button(option.label, 'spot', () =>
-        emit({ type: 'pilot-move', playerId: current.playerId, moves: option.moves }),
-      ),
+  const updateSummary = (): void => {
+    const parts = [...draft.entries()]
+      .filter(([, d]) => d !== 0)
+      .map(([b, d]) => `第 ${b + 1} 航道${d > 0 ? '前进' : '后退'} ${Math.abs(d)} 格`);
+    summary.textContent = parts.length
+      ? `将执行：${parts.join('；')}。`
+      : '还没选任何船。不想动某艘船就选「原地」，或者最后放弃影响力。';
+    confirm.disabled = parts.length === 0;
+  };
+
+  const list = el('div', 'pilot-boats');
+  for (const { b, i } of atSea) {
+    const line = el('div', 'row row--field pilot-boats__row');
+    line.appendChild(
+      el('span', 'row__label', `第 ${i + 1} 航道（${b.good ? goodName(b.good) : '空'}）`),
     );
+    const options: number[] = [];
+    for (let v = -maxStep; v <= maxStep; v += 1) options.push(v);
+    const btns: HTMLButtonElement[] = [];
+    for (const v of options) {
+      const btn = button(v === 0 ? '原地' : `${v > 0 ? '+' : '−'}${Math.abs(v)}`, 'btn btn--sm', () => {
+        draft.set(i, v);
+        btns.forEach((x) => x.classList.toggle('is-active', x === btn));
+        updateSummary();
+      });
+      btns.push(btn);
+      line.appendChild(btn);
+    }
+    list.appendChild(line);
   }
+  if (atSea.length === 0) list.appendChild(el('p', 'hint', '海上没有船可移动了。'));
   box.appendChild(list);
+  box.appendChild(summary);
+  box.appendChild(confirm);
   box.appendChild(
     button('放弃影响力', 'btn btn--wide', () =>
       emit({ type: 'pilot-skip', playerId: current.playerId }),
     ),
   );
-  box.appendChild(el('p', 'hint', '移动通过第 13 格即抵达港口；正好停在第 13 格不会触发海盗。'));
+  box.appendChild(
+    el(
+      'p',
+      'hint',
+      `${current.size === 'small' ? '小' : '大'}领航员：每艘海上的船都可以移动一次，每次最多 ${maxStep} 格。移动通过第 13 格即抵达港口；正好停在第 13 格不会触发海盗。`,
+    ),
+  );
+  updateSummary();
   return box;
 }
 
@@ -649,6 +666,53 @@ function gameOverView(ctx: PhaseViewContext): HTMLElement {
   return box;
 }
 
+/**
+ * 游戏结束的全屏演出：由 app.ts 在进入 game-over 阶段时挂到根节点。
+ * 入场走 overlay-fade + card-rise，排名逐行 stagger（Emil 规范：30-80ms 间隔）。
+ */
+export function createGameOverOverlay(state: GameState, onClose: () => void): HTMLElement {
+  const overlay = el('div', 'overlay gameover');
+
+  const card = el('div', 'overlay__card gameover__card');
+  const arrived = GOODS.filter(
+    (g) => (PRICE_TRACK[state.priceIndex[g.id] ?? 0] ?? 0) >= GAME_END_PRICE,
+  ).map((g) => g.name);
+
+  card.appendChild(el('h1', 'gameover__title', '游戏结束'));
+  card.appendChild(
+    el(
+      'p',
+      'gameover__cause',
+      `「${arrived.join('」「') || '货'}」的价格冲上了 ${GAME_END_PRICE} 元——马尼拉港的航运就此落幕。`,
+    ),
+  );
+
+  const ranked = [...state.players].sort((a, b) => wealthOf(state, b) - wealthOf(state, a));
+  const winner = ranked[0];
+  if (winner) {
+    const crown = el('div', 'gameover__winner');
+    crown.appendChild(el('span', 'gameover__winner-label', '马尼拉最成功的商人'));
+    crown.appendChild(el('strong', 'gameover__winner-name', winner.name));
+    crown.appendChild(el('span', 'gameover__winner-num', `财富 ${wealthOf(state, winner)} 元`));
+    card.appendChild(crown);
+  }
+
+  const list = el('ol', 'gameover__rank');
+  ranked.forEach((p, i) => {
+    const li = el('li', 'gameover__rank-item');
+    li.style.animationDelay = `${220 + i * 70}ms`;
+    li.appendChild(el('span', 'gameover__rank-pos', String(i + 1)));
+    li.appendChild(el('span', 'gameover__rank-name', p.name));
+    li.appendChild(el('span', 'gameover__rank-num', `${wealthOf(state, p)} 元`));
+    list.appendChild(li);
+  });
+  card.appendChild(list);
+
+  card.appendChild(button('查看最终排名', 'btn btn--primary btn--wide', onClose));
+  overlay.appendChild(card);
+  return overlay;
+}
+
 /** 供外壳显示当前阶段标题 */
 export function phaseTitle(state: GameState): string {
   const map: Record<string, string> = {
@@ -658,6 +722,7 @@ export function phaseTitle(state: GameState): string {
     launch: '港务长放船',
     placement: '放置小弟',
     movement: '掷骰推船',
+    negotiation: '谈判与转账',
     pilot: '领航员',
     'pirate-destination': '海盗决定去向',
     payout: '利润分配',

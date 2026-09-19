@@ -4,7 +4,13 @@
  */
 import { describe, expect, it } from 'vitest';
 import { createRoom, type AccountEntry } from '../server/room';
-import type { Intent } from '../src/core/game';
+import { GOODS } from '../src/config/board-layout';
+import {
+  currentAuctionPlayer,
+  currentPlacementPlayer,
+  type Intent,
+} from '../src/core/game';
+import type { PlayerId } from '../src/core/types';
 
 const ACCOUNTS: AccountEntry[] = [
   { account: 'a1', password: 'pw1', name: '甲' },
@@ -136,6 +142,93 @@ describe('意图门禁', () => {
     }
     expect(current.phase).toBe('buy-share');
     expect(actorSeat).toBeTruthy();
+  });
+});
+
+/** 把一局房间推到谈判阶段：全员过牌拿港务长 → 弃权股份 → 装货放船 → 放置全克制 + 三次移动 */
+function toNegotiation() {
+  const room = roomWithLoggedIn(3);
+  room.start('a1', 42);
+  const seatAccount = (seat: PlayerId) =>
+    room.snapshot().seats.find((s) => s.seat === seat)!.account;
+
+  for (let guard = 0; guard < 300; guard += 1) {
+    const st = room.snapshot().state!;
+    if (st.phase === 'negotiation') return { room, seatAccount };
+
+    if (st.phase === 'movement') {
+      // 公共推进阶段：任何座位点「继续」都行
+      expect(room.applyIntentFrom('a1', { type: 'advance' }).ok).toBe(true);
+      continue;
+    }
+
+    let who: PlayerId | null = null;
+    let intent: Intent | null = null;
+    switch (st.phase) {
+      case 'auction':
+        who = currentAuctionPlayer(st);
+        if (who) intent = { type: 'auction-pass', playerId: who };
+        break;
+      case 'buy-share':
+        who = st.harborMaster;
+        if (who) intent = { type: 'master-skip-share', playerId: who };
+        break;
+      case 'load':
+        who = st.harborMaster;
+        if (who)
+          intent = {
+            type: 'master-load',
+            playerId: who,
+            laneAssignment: [GOODS[0]!.id, GOODS[1]!.id, GOODS[2]!.id],
+          };
+        break;
+      case 'launch':
+        who = st.harborMaster;
+        if (who) intent = { type: 'master-launch', playerId: who, positions: [2, 3, 4] };
+        break;
+      case 'placement':
+        who = currentPlacementPlayer(st);
+        if (who) intent = { type: 'decline-placement', playerId: who };
+        break;
+      default:
+        throw new Error(`未预期阶段 ${st.phase}`);
+    }
+    if (!who || !intent) throw new Error(`阶段 ${st.phase} 推不动`);
+    const out = room.applyIntentFrom(seatAccount(who), intent);
+    if (!out.ok) throw new Error(`推进失败（${st.phase}）：${out.code} ${out.message}`);
+  }
+  throw new Error('没能到达谈判阶段');
+}
+
+describe('谈判阶段并发门禁', () => {
+  it('没有「轮到谁」：任何座位都能为自己转账 / 确认', () => {
+    const { room, seatAccount } = toNegotiation();
+    const [a, b] = room.snapshot().state!.players;
+    const t = room.applyIntentFrom(seatAccount(a!.id), {
+      type: 'transfer',
+      playerId: a!.id,
+      toPlayerId: b!.id,
+      amount: 3,
+    });
+    expect(t.ok).toBe(true);
+    const d = room.applyIntentFrom(seatAccount(b!.id), {
+      type: 'negotiation-done',
+      playerId: b!.id,
+    });
+    expect(d.ok).toBe(true);
+  });
+
+  it('谈判阶段也不能替别人出意图（seat-mismatch 仍然生效）', () => {
+    const { room, seatAccount } = toNegotiation();
+    const [a, b] = room.snapshot().state!.players;
+    const out = room.applyIntentFrom(seatAccount(a!.id), {
+      type: 'transfer',
+      playerId: b!.id,
+      toPlayerId: a!.id,
+      amount: 3,
+    });
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.code).toBe('seat-mismatch');
   });
 });
 

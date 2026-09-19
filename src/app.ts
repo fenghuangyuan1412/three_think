@@ -23,9 +23,11 @@ import { createScene } from './render/scene';
 import { skew } from './render/coords';
 import { goodHexCss } from './render/resources';
 import { createGamePanel, type GamePanelHandle } from './ui/game-panel';
+import { createGameOverOverlay } from './ui/phase-views';
 import { createHud } from './ui/hud';
 import { createKeepAwake } from './ui/keep-awake';
 import { createLobby, type LobbyHandle } from './ui/lobby';
+import { createNegotiation, type NegotiationHandle } from './ui/negotiation';
 import { createRulebook } from './ui/rulebook';
 import { createSettings, loadSettings, type SettingsValues } from './ui/settings';
 import { createStartScreen, type OnlineCredentials, type StartScreenHandle } from './ui/start-screen';
@@ -83,11 +85,61 @@ export function bootApp(root: HTMLElement): void {
 
   /** 把 core 的状态同步到画面 */
   let lastDiceKey: string | null = null;
+
+  /** 游戏结束演出：只在「进入 game-over」这一刻弹一次 */
+  let gameOverOverlay: HTMLElement | null = null;
+  let lastPhase: GameState['phase'] | null = null;
+
+  function closeGameOverOverlay(): void {
+    gameOverOverlay?.remove();
+    gameOverOverlay = null;
+  }
+
+  function maybePlayGameOver(next: GameState): void {
+    if (next.phase === 'game-over' && lastPhase !== 'game-over') {
+      closeGameOverOverlay();
+      gameOverOverlay = createGameOverOverlay(next, closeGameOverOverlay);
+      root.appendChild(gameOverOverlay);
+    } else if (next.phase !== 'game-over' && gameOverOverlay) {
+      closeGameOverOverlay();
+    }
+    lastPhase = next.phase;
+  }
+
+  // 谈判浮层：阶段一进来就挂上，离开阶段即撤；操作走当前会话的意图通道
+  let negotiation: NegotiationHandle | null = null;
+  let currentEmit: ((intent: Intent) => void) | null = null;
+  let currentYou: PlayerId | null = null;
+
+  function syncNegotiation(next: GameState): void {
+    if (next.phase === 'negotiation' && currentEmit) {
+      negotiation ??= createNegotiation({ you: currentYou, onIntent: (i) => currentEmit?.(i) });
+      if (!negotiation.element.isConnected) root.appendChild(negotiation.element);
+      negotiation.render(next);
+    } else if (next.phase !== 'negotiation' && negotiation) {
+      negotiation.dispose();
+      negotiation = null;
+    }
+  }
+
+  function closeSessionOverlays(): void {
+    closeGameOverOverlay();
+    negotiation?.dispose();
+    negotiation = null;
+    currentEmit = null;
+    lastPhase = null;
+  }
+
   function syncView(next: GameState, immediate = false): void {
     const noAnim = immediate || !settings.animations;
-    // 结算统一进港演出：航行三阶段里已抵达的船先在 13 格候补，payout 才跃入港湾/船厂
+    maybePlayGameOver(next);
+    syncNegotiation(next);
+    // 结算统一进港演出：航行阶段（含谈判/领航员）里已抵达的船先在 13 格候补，payout 才跃入港湾/船厂
     const showDocked =
-      next.phase !== 'placement' && next.phase !== 'pilot' && next.phase !== 'movement';
+      next.phase !== 'placement' &&
+      next.phase !== 'negotiation' &&
+      next.phase !== 'pilot' &&
+      next.phase !== 'movement';
     board.syncBoats(next.boats, noAnim, showDocked);
 
     accomplices.sync(next.placements, next.players, board, next.boats);
@@ -112,6 +164,7 @@ export function bootApp(root: HTMLElement): void {
 
   /** 设置面板「退回主界面」：结束当前对局回到开始屏 */
   function returnHome(): void {
+    closeSessionOverlays();
     leaveSession?.();
     leaveSession = null;
     showStartScreen();
@@ -155,6 +208,8 @@ export function bootApp(root: HTMLElement): void {
     hud.setSeed(seed);
 
     state = startVoyage(createGame({ playerCount, names, seed }));
+    currentYou = null;
+    currentEmit = handleIntent;
     syncView(state, true);
 
     panel = createGamePanel({ onIntent: handleIntent });
@@ -162,6 +217,7 @@ export function bootApp(root: HTMLElement): void {
     panel.render(state, null);
 
     leaveSession = () => {
+      closeSessionOverlays();
       panel?.dispose();
       panel = null;
       state = null;
@@ -197,6 +253,7 @@ export function bootApp(root: HTMLElement): void {
         notice = null;
         lastSnapshot = snapshot;
         mySeat = snapshot.seats.find((s) => s.account === creds.account)?.seat ?? null;
+        currentYou = mySeat;
 
         if (snapshot.roomPhase === 'lobby' || !snapshot.state) {
           panel?.dispose();
@@ -226,7 +283,10 @@ export function bootApp(root: HTMLElement): void {
       },
     });
 
+    currentEmit = (intent) => net.send({ type: 'intent', intent });
+
     leaveSession = () => {
+      closeSessionOverlays();
       net.close();
       panel?.dispose();
       panel = null;

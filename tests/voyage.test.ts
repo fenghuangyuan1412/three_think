@@ -18,6 +18,7 @@ import {
   currentPlacementPlayer,
   placementContext,
   sharePrice,
+  validatePilotMoves,
   wealthOf,
   type GameState,
   type Intent,
@@ -107,6 +108,10 @@ function pickIntent(s: GameState): Intent | null {
         costOf(ctx, spot) < costOf(ctx, best) ? spot : best,
       );
       return { type: 'place', playerId: who, spot: cheapest };
+    }
+    case 'negotiation': {
+      const who = s.players.find((p) => !s.negotiationConfirmed.includes(p.id));
+      return who ? { type: 'negotiation-done', playerId: who.id } : null;
     }
     case 'pilot': {
       const cur = currentPilot(s);
@@ -437,6 +442,135 @@ describe('利润分配与保险', () => {
 
     expect(after.find((p) => p.id === 'victim')?.cash).toBe(0);
     expect(after.find((p) => p.id === 'pirate')?.cash).toBe(load.totalReward);
+  });
+});
+
+// ---------------------------------------------------------------- 谈判与领航员
+
+/** 从放船之后推进到谈判阶段：放置轮全员自我克制，移动轮点继续 */
+function driveToNegotiation(state: GameState): GameState {
+  let s = state;
+  for (let i = 0; i < 60 && s.phase !== 'negotiation'; i += 1) {
+    if (s.phase === 'placement') {
+      const who = currentPlacementPlayer(s);
+      if (!who) throw new Error('放置阶段没有可行动者');
+      s = step(s, { type: 'decline-placement', playerId: who });
+    } else if (s.phase === 'movement') {
+      s = step(s, { type: 'advance' });
+    } else {
+      throw new Error(`意外阶段 ${s.phase}`);
+    }
+  }
+  return s;
+}
+
+describe('谈判与转账', () => {
+  it('第三次投骰结束后、结算之前进入谈判阶段', () => {
+    const s = driveToNegotiation(runMasterDuties(runAuction(startVoyageForTest(3))));
+    expect(s.phase).toBe('negotiation');
+    // 还轮到不了结算：领航员/结算都在全员确认之后
+    expect(s.payout).toBeNull();
+  });
+
+  it('每人每段航程可转账一次，双方现金此消彼长', () => {
+    let s = driveToNegotiation(runMasterDuties(runAuction(startVoyageForTest(3))));
+    const a = s.players[0]!;
+    const b = s.players[1]!;
+    s = step(s, { type: 'transfer', playerId: a.id, toPlayerId: b.id, amount: 7 });
+    expect(s.players.find((p) => p.id === a.id)!.cash).toBe(a.cash - 7);
+    expect(s.players.find((p) => p.id === b.id)!.cash).toBe(b.cash + 7);
+
+    // 第二次主动转出被拒
+    const again = applyIntent(s, { type: 'transfer', playerId: a.id, toPlayerId: b.id, amount: 1 });
+    expect(again.ok).toBe(false);
+    if (!again.ok) expect(again.error.code).toBe('already-transferred');
+  });
+
+  it('转账金额与对象受限：正整数、不能超现金、不能转给自己', () => {
+    const s = driveToNegotiation(runMasterDuties(runAuction(startVoyageForTest(3))));
+    const a = s.players[0]!;
+    const b = s.players[1]!;
+    expect(applyIntent(s, { type: 'transfer', playerId: a.id, toPlayerId: b.id, amount: 0 }).ok).toBe(false);
+    expect(applyIntent(s, { type: 'transfer', playerId: a.id, toPlayerId: b.id, amount: 1.5 }).ok).toBe(false);
+    expect(applyIntent(s, { type: 'transfer', playerId: a.id, toPlayerId: b.id, amount: a.cash + 1 }).ok).toBe(false);
+    const self = applyIntent(s, { type: 'transfer', playerId: a.id, toPlayerId: a.id, amount: 1 });
+    expect(self.ok).toBe(false);
+    if (!self.ok) expect(self.error.code).toBe('self-transfer');
+  });
+
+  it('全员确认后进结算（无人担任领航员时直接利润分配）', () => {
+    let s = driveToNegotiation(runMasterDuties(runAuction(startVoyageForTest(3))));
+    for (const p of [...s.players]) {
+      s = step(s, { type: 'negotiation-done', playerId: p.id });
+    }
+    expect(s.phase).toBe('payout');
+  });
+});
+
+describe('领航员（每船一次，新额度）', () => {
+  const seaBoats = (): BoatState[] =>
+    [0, 1, 2].map((lane) => ({
+      lane,
+      good: GOODS[lane]!.id,
+      position: 5,
+      arrivedSlot: null,
+      shipyardSlot: null,
+      plundered: false,
+    }));
+
+  it('小领航员：每艘海上的船各可 ±1，但同一艘只能动一次', () => {
+    expect(
+      validatePilotMoves('small', [{ boat: 0, delta: 1 }, { boat: 1, delta: -1 }, { boat: 2, delta: 1 }], seaBoats()).ok,
+    ).toBe(true);
+    expect(validatePilotMoves('small', [{ boat: 0, delta: 2 }], seaBoats()).ok).toBe(false);
+    expect(
+      validatePilotMoves('small', [{ boat: 0, delta: 1 }, { boat: 0, delta: 1 }], seaBoats()).ok,
+    ).toBe(false);
+  });
+
+  it('大领航员：每艘海上的船各可 ±2', () => {
+    expect(
+      validatePilotMoves('large', [{ boat: 0, delta: 2 }, { boat: 1, delta: -2 }, { boat: 2, delta: 2 }], seaBoats()).ok,
+    ).toBe(true);
+    expect(validatePilotMoves('large', [{ boat: 0, delta: 3 }], seaBoats()).ok).toBe(false);
+    expect(
+      validatePilotMoves('large', [{ boat: 1, delta: 1 }, { boat: 1, delta: 1 }], seaBoats()).ok,
+    ).toBe(false);
+  });
+
+  it('领航员在谈判确认之后才行动，推完船立即进入结算链', () => {
+    let s = runMasterDuties(runAuction(startVoyageForTest(3)));
+    const first = currentPlacementPlayer(s)!;
+    s = step(s, { type: 'place', playerId: first, spot: { kind: 'pilot', size: 'small' } });
+    s = driveToNegotiation(s);
+    expect(s.phase).toBe('negotiation');
+
+    for (const p of [...s.players]) {
+      s = step(s, { type: 'negotiation-done', playerId: p.id });
+    }
+    expect(s.phase).toBe('pilot');
+    expect(currentPilot(s)?.playerId).toBe(first);
+    expect(s.pilotPending).toEqual(['small']);
+
+    // 每艘海上的船各推进 1 格（越过 13 即抵达，位置停在 13）
+    const atSea = s.boats
+      .map((b, i) => ({ b, i }))
+      .filter(({ b }) => b.arrivedSlot === null && b.shipyardSlot === null);
+    if (atSea.length > 0) {
+      const before = s.boats.map((b) => b.position);
+      s = step(s, {
+        type: 'pilot-move',
+        playerId: first,
+        moves: atSea.map(({ i }) => ({ boat: i, delta: 1 })),
+      });
+      for (const { i } of atSea) {
+        expect(s.boats[i]!.position).toBe(Math.min(before[i]! + 1, LANE_LAST_SPACE));
+      }
+    } else {
+      s = step(s, { type: 'pilot-skip', playerId: first });
+    }
+    // 小领航员行动完（没人当大领航员）→ 航程收尾
+    expect(['payout', 'pirate-destination']).toContain(s.phase);
   });
 });
 

@@ -8,8 +8,8 @@
  *
  * 完整航程流程（每段航程四步，规则见 config 与 docs/game-flow.md）：
  *   竞标港务长 → 买股份 → 装货 → 放船
- *   → 放置小弟 / 掷骰推船 交替（含海盗登船、领航员）
- *   → 海盗去向 → 利润分配 → 货物涨价 → 下一段航程
+ *   → 放置小弟 / 掷骰推船 交替（含海盗登船）
+ *   → 谈判与转账 → 领航员 → 海盗去向 → 利润分配 → 货物涨价 → 下一段航程
  *   任一货物价格达到 30 元 → 游戏结束，财富最高者胜。
  */
 import {
@@ -82,6 +82,7 @@ export type GamePhase =
   | 'launch'
   | 'placement'
   | 'movement'
+  | 'negotiation'
   | 'pilot'
   | 'pirate-destination'
   | 'payout'
@@ -105,7 +106,7 @@ export interface GameState {
   readonly priceIndex: Readonly<Record<GoodId, number>>;
   readonly boats: readonly BoatState[];
   readonly placements: readonly Placement[];
-  /** 本航程的步骤表（放置 / 移动 / 领航员） */
+  /** 本航程的步骤表（放置 / 移动；谈判与领航员在表走完后由 game.ts 接管） */
   readonly schedule: readonly VoyageStep[];
   readonly stepIndex: number;
   /** 当前放置回合内已放置过的玩家 */
@@ -121,6 +122,14 @@ export interface GameState {
   readonly piratePending: readonly number[];
   /** 领航员阶段：还没行动的领航员（先小后大） */
   readonly pilotPending: readonly PilotSize[];
+  /** 本段航程已经转过账的玩家（每人每段航程只能主动转出一次） */
+  readonly transferredThisVoyage: readonly PlayerId[];
+  /** 谈判阶段已点「确认」的玩家；全员确认后才轮到领航员行动 */
+  readonly negotiationConfirmed: readonly PlayerId[];
+  /** 放船时各玩家现金快照，谈判界面用它显示「本轮金额变化」 */
+  readonly roundStartCash: Readonly<Partial<Record<PlayerId, number>>>;
+  /** 放船时的日志长度快照，谈判界面只回放本航程的操作 */
+  readonly roundLogMark: number;
   readonly payout: PayoutReport | null;
   /** 面向玩家的中文事件日志 */
   readonly log: readonly string[];
@@ -140,6 +149,13 @@ export type Intent =
   | { readonly type: 'decline-placement'; readonly playerId: PlayerId }
   | { readonly type: 'pilot-move'; readonly playerId: PlayerId; readonly moves: readonly PilotMove[] }
   | { readonly type: 'pilot-skip'; readonly playerId: PlayerId }
+  | {
+      readonly type: 'transfer';
+      readonly playerId: PlayerId;
+      readonly toPlayerId: PlayerId;
+      readonly amount: number;
+    }
+  | { readonly type: 'negotiation-done'; readonly playerId: PlayerId }
   | {
       readonly type: 'pirate-destination';
       readonly playerId: PlayerId;
@@ -239,6 +255,10 @@ export function createGame(options: CreateGameOptions): GameState {
     pirateCaptain: null,
     piratePending: [],
     pilotPending: [],
+    transferredThisVoyage: [],
+    negotiationConfirmed: [],
+    roundStartCash: {},
+    roundLogMark: 0,
     payout: null,
     log: [
       `${playerCount} 人局开始，每人 ${STARTING_CASH} 元披索、${accomplices} 个小弟、${STARTING_SHARES} 张股份。`,
@@ -275,6 +295,10 @@ export function startVoyage(state: GameState): GameState {
     pirateCaptain: null,
     piratePending: [],
     pilotPending: [],
+    transferredThisVoyage: [],
+    negotiationConfirmed: [],
+    roundStartCash: {},
+    roundLogMark: 0,
     payout: null,
     harborMaster: null,
     log: [
@@ -396,6 +420,8 @@ export function applyIntent(state: GameState, intent: Intent): IntentOutcome {
       return handlePlacement(state, intent);
     case 'movement':
       return handleMovementAdvance(state, intent);
+    case 'negotiation':
+      return handleNegotiation(state, intent);
     case 'pilot':
       return handlePilot(state, intent);
     case 'pirate-destination':
@@ -582,6 +608,7 @@ function handleLaunch(state: GameState, intent: Intent): IntentOutcome {
   ];
 
   const schedule = voyageSchedule(state.players.length);
+  const logLines = [...state.log, ...lines];
   const next: GameState = {
     ...state,
     boats,
@@ -590,7 +617,11 @@ function handleLaunch(state: GameState, intent: Intent): IntentOutcome {
     actedThisRound: [],
     declined: [],
     pilotPending: [],
-    log: [...state.log, ...lines],
+    transferredThisVoyage: [],
+    negotiationConfirmed: [],
+    roundStartCash: Object.fromEntries(state.players.map((p) => [p.id, p.cash])),
+    roundLogMark: logLines.length,
+    log: logLines,
   };
   return okState(enterStep(next));
 }
@@ -600,33 +631,26 @@ function handleLaunch(state: GameState, intent: Intent): IntentOutcome {
 /**
  * 进入当前 stepIndex 指向的步骤。
  * - placement：等待玩家逐个放小弟
- * - pilot：等待领航员行动
  * - movement：立即掷骰 + 推船 + 处理海盗触发，然后等待「继续」
+ * 步骤表走完（第三次投骰结束）→ 谈判阶段，之后才是领航员与结算。
  */
 function enterStep(state: GameState): GameState {
   const step = state.schedule[state.stepIndex];
 
   if (step === undefined) {
-    return finishVoyage(state);
+    return startNegotiation(state);
   }
 
   switch (step) {
-    case 'placement':
-      return withLog({ ...state, phase: 'placement', actedThisRound: [] }, [
+    case 'placement': {
+      const entered = withLog({ ...state, phase: 'placement', actedThisRound: [] }, [
         `放置小弟（第 ${state.schedule.slice(0, state.stepIndex + 1).filter((s) => s === 'placement').length} 轮）。`,
       ]);
-
-    case 'pilot': {
-      const pending: PilotSize[] = [];
-      for (const size of ['small', 'large'] as const) {
-        if (state.placements.some((p) => p.spot.kind === 'pilot' && p.spot.size === size)) {
-          pending.push(size);
-        }
+      // 所有人都已自我克制 / 用完小弟 → 这一轮无人可行动，直接越过，避免卡在放置盘上
+      if (currentPlacementPlayer(entered) === null) {
+        return enterStep({ ...entered, stepIndex: state.stepIndex + 1 });
       }
-      if (pending.length === 0) {
-        return enterStep({ ...state, stepIndex: state.stepIndex + 1 });
-      }
-      return withLog({ ...state, phase: 'pilot', pilotPending: pending }, ['领航员阶段。']);
+      return entered;
     }
 
     case 'movement':
@@ -746,6 +770,76 @@ function maybeAdvancePlacement(state: GameState): GameState {
   return enterStep({ ...state, stepIndex: state.stepIndex + 1 });
 }
 
+// ---------------------------------------------------------------- 谈判与转账
+
+/** 第三次投骰结束、领航员行动之前：所有人有一次转账窗口（私下谈判的落地形式） */
+function startNegotiation(state: GameState): GameState {
+  return withLog(
+    { ...state, phase: 'negotiation', negotiationConfirmed: [], pilotPending: [] },
+    ['── 谈判阶段 ──', '三次投骰结束。每人本段航程可转账一次，全员确认后由领航员行动。'],
+  );
+}
+
+function handleNegotiation(state: GameState, intent: Intent): IntentOutcome {
+  if (intent.type === 'transfer') {
+    if (state.transferredThisVoyage.includes(intent.playerId)) {
+      return err('already-transferred', '你本段航程已经转过一次账了。');
+    }
+    const from = findPlayer(state.players, intent.playerId);
+    const to = findPlayer(state.players, intent.toPlayerId);
+    if (!from || !to) return err('unknown-player', '找不到转账的双方。');
+    if (from.id === to.id) return err('self-transfer', '不能转给自己。');
+    if (!Number.isInteger(intent.amount) || intent.amount < 1) {
+      return err('bad-amount', '转账金额必须是至少 1 元的整数。');
+    }
+    if (intent.amount > from.cash) {
+      return err('cannot-afford', `现金只有 ${from.cash} 元，转不出 ${intent.amount} 元。`);
+    }
+
+    const players = state.players.map((p) =>
+      p.id === from.id
+        ? { ...p, cash: p.cash - intent.amount }
+        : p.id === to.id
+          ? { ...p, cash: p.cash + intent.amount }
+          : p,
+    );
+    return okState({
+      ...state,
+      players,
+      transferredThisVoyage: [...state.transferredThisVoyage, from.id],
+      log: [...state.log, `${from.name} 转账 ${intent.amount} 元给 ${to.name}。`],
+    });
+  }
+
+  if (intent.type === 'negotiation-done') {
+    const player = findPlayer(state.players, intent.playerId);
+    if (!player) return err('unknown-player', '找不到玩家。');
+    if (state.negotiationConfirmed.includes(player.id)) {
+      return err('already-confirmed', '你已经确认过了。');
+    }
+    const confirmed = [...state.negotiationConfirmed, player.id];
+    const next = { ...state, negotiationConfirmed: confirmed };
+    if (state.players.some((p) => !confirmed.includes(p.id))) return okState(next);
+    return okState(startPilotPhase(next));
+  }
+
+  return err('wrong-intent', '谈判阶段只能转账或确认结束谈判。');
+}
+
+/** 全员确认谈判后：有领航员则先小后大依次行动，否则直接进结算链 */
+function startPilotPhase(state: GameState): GameState {
+  const pending: PilotSize[] = [];
+  for (const size of ['small', 'large'] as const) {
+    if (state.placements.some((p) => p.spot.kind === 'pilot' && p.spot.size === size)) {
+      pending.push(size);
+    }
+  }
+  if (pending.length === 0) return finishVoyage({ ...state, pilotPending: [] });
+  return withLog({ ...state, phase: 'pilot', pilotPending: pending }, [
+    '领航员阶段：按先小后大的顺序行动。',
+  ]);
+}
+
 // ---------------------------------------------------------------- 领航员
 
 function handlePilot(state: GameState, intent: Intent): IntentOutcome {
@@ -755,8 +849,8 @@ function handlePilot(state: GameState, intent: Intent): IntentOutcome {
 
   const current = currentPilot(state);
   if (!current) {
-    // 剩下的领航员都没人担任 → 直接跳过
-    return okState(skipRestOfPilot(state, []));
+    // 领航员位子没人担任 → 直接结算
+    return okState(finishVoyage({ ...state, pilotPending: [] }));
   }
   if (intent.playerId !== current.playerId) {
     const name = findPlayer(state.players, current.playerId)?.name ?? current.playerId;
@@ -781,21 +875,18 @@ function handlePilot(state: GameState, intent: Intent): IntentOutcome {
   }
 
   const remaining = state.pilotPending.filter((s) => s !== current.size);
-  let next: GameState = { ...state, boats, pilotPending: remaining, log: [...state.log, ...lines] };
+  const next: GameState = { ...state, boats, pilotPending: remaining, log: [...state.log, ...lines] };
 
   if (currentPilot(next) === null) {
-    // 剩下的领航员位子没人 → 一并跳过，然后进入最后一步
-    next = skipRestOfPilot(next, []);
-    return okState(enterStep({ ...next, stepIndex: next.stepIndex + 1 }));
+    return okState(finishVoyage({ ...next, pilotPending: [] }));
   }
   return okState(next);
 }
 
-function skipRestOfPilot(state: GameState, lines: string[]): GameState {
-  return { ...state, pilotPending: [], log: [...state.log, ...lines] };
-}
-
-/** 领航员影响力的合法性：小领航员最多 1 格；大领航员要么一艘 2 格，要么两艘各 1 格 */
+/**
+ * 领航员影响力的合法性（本作规则，房主定案）：
+ * 每艘还在海上的船都可以被他移动一次，小领航员每艘 ±1 格、大领航员每艘 ±2 格。
+ */
 export function validatePilotMoves(
   size: PilotSize,
   moves: readonly PilotMove[],
@@ -805,23 +896,20 @@ export function validatePilotMoves(
   if (moves.some((m) => boats[m.boat]?.arrivedSlot !== null || boats[m.boat]?.shipyardSlot !== null)) {
     return fail('领航员无法影响已经抵达或已进船厂的平底船。');
   }
-  const total = moves.reduce((sum, m) => sum + Math.abs(m.delta), 0);
   if (moves.some((m) => !Number.isInteger(m.delta))) return fail('移动格数必须是整数。');
 
-  if (size === 'small') {
-    if (moves.length > 1) return fail('小领航员只能移动一艘船。');
-    if (total > 1) return fail('小领航员只能移动一格。');
-    return ok();
+  const seen = new Set<number>();
+  for (const m of moves) {
+    if (seen.has(m.boat)) return fail('每艘船只能被领航员移动一次。');
+    seen.add(m.boat);
   }
 
-  if (moves.length > 2) return fail('大领航员最多移动两艘船。');
-  if (moves.length === 2) {
-    if (total > 2 || moves.some((m) => Math.abs(m.delta) > 1)) {
-      return fail('大领航员移动两艘船时，每艘只能移动一格。');
-    }
-    return ok();
+  const max = size === 'small' ? 1 : 2;
+  if (moves.some((m) => Math.abs(m.delta) > max)) {
+    return fail(
+      `${size === 'small' ? '小' : '大'}领航员每艘船最多移动 ${max} 格。`,
+    );
   }
-  if (total > 2) return fail('大领航员最多移动两格。');
   return ok();
 }
 

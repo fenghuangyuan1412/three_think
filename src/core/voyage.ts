@@ -174,16 +174,18 @@ export interface DiceRoll {
 
 // ---------------------------------------------------------------- 步骤表
 
-export type VoyageStep = 'placement' | 'movement' | 'pilot';
+export type VoyageStep = 'placement' | 'movement';
 
 /**
  * 一段航程的步骤表。本作规则（房主定案）：任何人数局统一
- * 「P M P M P [pilot] M」——3 轮放置对应 3 个小弟，第 3 次移动后必进结算。
+ * 「P M P M P M」——3 轮放置对应 3 个小弟。
+ * 第三次投骰结束后先进入谈判阶段（每人可转账一次），再由领航员行动，最后结算；
+ * 这两步不在步骤表里，由 game.ts 在表走完后接管。
  * （官方规则书对 3 人局有"4 小弟 4 放置轮"的变体，本作不采用。）
  */
 export function voyageSchedule(playerCount: number): VoyageStep[] {
   void playerCount;
-  return ['placement', 'movement', 'placement', 'movement', 'placement', 'pilot', 'movement'];
+  return ['placement', 'movement', 'placement', 'movement', 'placement', 'movement'];
 }
 
 /** 已经执行过几次移动回合（用于判断海盗是登船还是劫掠） */
