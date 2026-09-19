@@ -6,12 +6,12 @@
  */
 
 :root {
-  --sea-900: #06161e;
-  --sea-850: #081d26;
-  --sea-800: #0b232e;
-  --sea-700: #103440;
-  --line: #1d4353;
-  --line-soft: #16323e;
+  --sea-900: #04181d;
+  --sea-850: #062229;
+  --sea-800: #092c34;
+  --sea-700: #0e3d47;
+  --line: #1f5560;
+  --line-soft: #17414a;
   --gold: #d9a441;
   /* 同时用作描边与文字色：压得太暗时小字看不清（用户实测反馈） */
   --gold-dim: #b18a41;
@@ -19,6 +19,10 @@
   --muted: #9fb9c4;
   --danger: #e08a78;
   --ok: #63b79f;
+
+  /* 动画曲线（emilkowalski/skills animate：内置 ease-out 太弱，集中在此避免各处手搓） */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
 
   --font-sans: "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui,
     -apple-system, sans-serif;
@@ -232,8 +236,10 @@ body {
   cursor: pointer;
 }
 
-.bid-quick button:hover {
-  border-color: var(--gold-dim);
+@media (hover: hover) and (pointer: fine) {
+  .bid-quick button:hover {
+    border-color: var(--gold-dim);
+  }
 }
 
 .auction__buttons {
@@ -252,14 +258,18 @@ body {
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 120ms ease, border-color 120ms ease, transform 60ms ease;
+  transition: background 120ms var(--ease-out), border-color 120ms var(--ease-out),
+    transform 100ms var(--ease-out);
 }
 
-.btn:hover:not(:disabled) {
-  border-color: var(--gold-dim);
-  background: #14404e;
+@media (hover: hover) and (pointer: fine) {
+  .btn:hover:not(:disabled) {
+    border-color: var(--gold-dim);
+    background: #14404e;
+  }
 }
 
+/* 按下反馈走 :active 而非 :hover，触屏同样能收到这 100ms 的确认 */
 .btn:active:not(:disabled) {
   transform: translateY(1px);
 }
@@ -275,8 +285,10 @@ body {
   color: #1b1204;
 }
 
-.btn--primary:hover:not(:disabled) {
-  background: linear-gradient(180deg, #dda444, #b8862a);
+@media (hover: hover) and (pointer: fine) {
+  .btn--primary:hover:not(:disabled) {
+    background: linear-gradient(180deg, #dda444, #b8862a);
+  }
 }
 
 .btn--wide {
@@ -509,10 +521,12 @@ body {
   color: var(--gold-dim);
 }
 
-.rulebook__fab:hover,
-.settings__fab:hover {
-  border-color: var(--gold);
-  color: var(--gold);
+@media (hover: hover) and (pointer: fine) {
+  .rulebook__fab:hover,
+  .settings__fab:hover {
+    border-color: var(--gold);
+    color: var(--gold);
+  }
 }
 
 .rulebook__overlay,
@@ -526,6 +540,7 @@ body {
   background: rgba(6, 22, 30, 0.86);
   backdrop-filter: blur(3px);
   overflow-y: auto;
+  animation: overlay-fade 180ms var(--ease-out);
 }
 
 .rulebook__overlay[hidden],
@@ -543,6 +558,7 @@ body {
   border-radius: 18px;
   background: linear-gradient(180deg, var(--sea-800), var(--sea-850));
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  animation: card-rise 260ms var(--ease-out);
 }
 
 .settings__card {
@@ -636,6 +652,7 @@ body {
   background: radial-gradient(circle at 30% 20%, rgba(16, 52, 64, 0.94), rgba(6, 22, 30, 0.98));
   backdrop-filter: blur(3px);
   overflow-y: auto;
+  animation: overlay-fade 180ms var(--ease-out);
 }
 
 .overlay__card {
@@ -645,6 +662,7 @@ body {
   border-radius: 18px;
   background: linear-gradient(180deg, var(--sea-800), var(--sea-850));
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  animation: card-rise 260ms var(--ease-out);
 }
 
 .overlay__eyebrow {
@@ -672,6 +690,12 @@ body {
 
 .overlay__section {
   margin-top: 26px;
+  animation: card-rise 260ms var(--ease-out) backwards;
+}
+
+/* 面板内分区错开 60ms 入场，避免整屏内容同时闪现（animate skill：30–80ms stagger） */
+.overlay__section:nth-of-type(2) {
+  animation-delay: 60ms;
 }
 
 .overlay__label {
@@ -697,10 +721,14 @@ body {
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
+  transition: border-color 120ms var(--ease-out), background 120ms var(--ease-out),
+    color 120ms var(--ease-out);
 }
 
-.count-picker__option:hover {
-  border-color: var(--gold-dim);
+@media (hover: hover) and (pointer: fine) {
+  .count-picker__option:hover {
+    border-color: var(--gold-dim);
+  }
 }
 
 .count-picker__option.is-active {
@@ -906,12 +934,14 @@ body {
   font-size: 13px;
   text-align: left;
   cursor: pointer;
-  transition: border-color 120ms ease, background 120ms ease;
+  transition: border-color 120ms var(--ease-out), background 120ms var(--ease-out);
 }
 
-.spot:hover:not(:disabled) {
-  border-color: var(--gold-dim);
-  background: #14404e;
+@media (hover: hover) and (pointer: fine) {
+  .spot:hover:not(:disabled) {
+    border-color: var(--gold-dim);
+    background: #14404e;
+  }
 }
 
 .spot:disabled {
@@ -1159,10 +1189,13 @@ body {
   font: inherit;
   font-size: 14px;
   padding: 8px 14px 10px;
+  transition: color 120ms var(--ease-out), border-color 120ms var(--ease-out);
 }
 
-.mode-tabs__tab:hover {
-  color: var(--cream);
+@media (hover: hover) and (pointer: fine) {
+  .mode-tabs__tab:hover {
+    color: var(--cream);
+  }
 }
 
 .mode-tabs__tab.is-active {
@@ -1231,6 +1264,7 @@ body {
   top: 12px;
   transform: translateX(-50%);
   z-index: 30;
+  animation: overlay-fade 200ms var(--ease-out);
 }
 
 .online-bar__ok {
@@ -1239,4 +1273,41 @@ body {
 
 .online-bar__bad {
   color: var(--danger);
+}
+
+/* ------------------------------------------------------- 动画关键帧与降级 */
+
+@keyframes overlay-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* 从 scale(0.96) 而非 0 起步：世界里的东西不会凭空出现（animate skill 硬规则） */
+@keyframes card-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
+  }
+}
+
+/* 减弱动效 = 保留帮助理解的色彩/透明度变化，去掉位移与缩放 */
+@media (prefers-reduced-motion: reduce) {
+  .overlay__card,
+  .rulebook__card,
+  .settings__card,
+  .overlay__section {
+    animation: overlay-fade 180ms linear;
+  }
+
+  .btn,
+  .spot,
+  .count-picker__option,
+  .mode-tabs__tab {
+    transition-duration: 1ms;
+  }
+
+  .btn:active:not(:disabled) {
+    transform: none;
+  }
 }

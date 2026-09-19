@@ -36,7 +36,7 @@ export function createLaneStripTexture(spaceCount: number): THREE.CanvasTexture 
     for (let space = 0; space < spaceCount; space += 1) {
       // 画布底部 = 格子 0
       const y = (spaceCount - 1 - space) * cellH;
-      ctx.fillStyle = space % 2 === 0 ? CSS.parchment : '#c2ac82';
+      ctx.fillStyle = space % 2 === 0 ? CSS.parchment : '#d0b57f';
       ctx.fillRect(0, y, cellW, cellH);
 
       ctx.strokeStyle = CSS.laneLine;
@@ -77,7 +77,7 @@ export function createPriceTrackTexture(
     goods.forEach((good, row) => {
       const y = headerH + row * cellH;
 
-      ctx.fillStyle = row % 2 === 0 ? '#16272f' : '#122128';
+      ctx.fillStyle = row % 2 === 0 ? '#143038' : '#0f2831';
       ctx.fillRect(0, y, width, cellH);
 
       ctx.fillStyle = CSS.cream;
@@ -87,11 +87,11 @@ export function createPriceTrackTexture(
 
       prices.forEach((price, col) => {
         const x = rowLabelW + col * cellW;
-        ctx.strokeStyle = '#28414d';
+        ctx.strokeStyle = '#33565f';
         ctx.lineWidth = 6;
         ctx.strokeRect(x + 4, y + 4, cellW - 8, cellH - 8);
 
-        ctx.fillStyle = price >= 30 ? CSS.gold : '#b4cad2';
+        ctx.fillStyle = price >= 30 ? CSS.gold : '#cfe4e8';
         ctx.font = '600 80px "Noto Sans SC","Microsoft YaHei",system-ui,sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(String(price), x + cellW / 2, y + cellH / 2);

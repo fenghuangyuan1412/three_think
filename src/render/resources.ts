@@ -9,10 +9,10 @@ import type { GoodId } from '../core/types';
 
 /** 四种货物的 3D 色值（来源：官方规则书 Abb. 2b 开局黑市插图配色） */
 export const GOOD_HEX: Record<GoodId, number> = {
-  nutmeg: 0x7a4a2b,
-  silk: 0x35558f,
-  ginseng: 0xc9b27a,
-  jade: 0x2f7a52,
+  nutmeg: 0x9c5a2c,
+  silk: 0x3f66b8,
+  ginseng: 0xd8bc7e,
+  jade: 0x2f9a62,
 };
 
 export function goodHex(good: string): number {

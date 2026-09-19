@@ -85,7 +85,10 @@ export function bootApp(root: HTMLElement): void {
   let lastDiceKey: string | null = null;
   function syncView(next: GameState, immediate = false): void {
     const noAnim = immediate || !settings.animations;
-    board.syncBoats(next.boats, noAnim);
+    // 结算统一进港演出：航行三阶段里已抵达的船先在 13 格候补，payout 才跃入港湾/船厂
+    const showDocked =
+      next.phase !== 'placement' && next.phase !== 'pilot' && next.phase !== 'movement';
+    board.syncBoats(next.boats, noAnim, showDocked);
 
     accomplices.sync(next.placements, next.players, board, next.boats);
 

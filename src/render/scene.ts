@@ -55,8 +55,8 @@ export function createScene(container: HTMLElement): SceneHandle {
   container.appendChild(canvas);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x05141b);
-  scene.fog = new THREE.Fog(0x05141b, 46, 96);
+  scene.background = new THREE.Color(0x06222a);
+  scene.fog = new THREE.Fog(0x06222a, 46, 96);
 
   const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 260);
   const target = new THREE.Vector3(CAMERA_TARGET.x, 0, CAMERA_TARGET.z);

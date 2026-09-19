@@ -73,8 +73,8 @@ export interface BoardView {
   readonly group: THREE.Group;
   /** 把第 index 艘船放到指定航道的指定格（瞬时） */
   placeBoat(index: number, lane: number, space: number): void;
-  /** 按对局状态同步三艘船的位置（默认补间）与船上的货仓板块 */
-  syncBoats(boats: readonly BoatState[], immediate?: boolean): void;
+  /** 按对局状态同步三艘船的位置（默认补间）与船上的货仓板块；showDocked=false 时已抵达的船留在 13 格候补 */
+  syncBoats(boats: readonly BoatState[], immediate?: boolean, showDocked?: boolean): void;
   /** 某格位在世界中的位置（供拾取代理与调试使用） */
   spotPosition(spot: SpotRef, boats: readonly BoatState[]): THREE.Vector3;
   /**
@@ -128,7 +128,9 @@ export function createBoard(): BoardView {
     return sprite;
   };
 
-  const inkColor = '#241d13';
+  const inkColor = '#241a0e';
+  /** 平贴字的浅色药丸底：贴图台面有木纹噪点，深字直接贴上去仍会糊（用户实测），垫一层才稳 */
+  const labelPlate = 'rgba(245, 233, 201, 0.85)';
 
   /** 两点之间的细连线（板上表示关联，如海盗船 → 第 13 格） */
   const linkLine = (
@@ -176,6 +178,9 @@ export function createBoard(): BoardView {
     mat(new THREE.MeshStandardMaterial({
       color: 0xffffff,
       map: bagTex(skinTexture('waterTeal', 5, 6)),
+      // 贴图本身偏暗；加一点青色自发光把海面提亮到实拍的绿松石感
+      emissive: new THREE.Color(0x1f7a76),
+      emissiveIntensity: 0.55,
       roughness: 0.36,
       metalness: 0.32,
     })),
@@ -227,8 +232,9 @@ export function createBoard(): BoardView {
   const launchLabel = skew({ x: laneX(0) - LANE_GAP / 2 - 1.5, z: -5.5 * SPACE_PITCH });
   flatLabel(group, '起点区 0–5', launchLabel.x, 0.09, launchLabel.z, {
     worldHeight: 0.38,
-    color: '#d9a441',
+    color: '#e8b95a',
     bold: true,
+    background: 'rgba(8,28,36,0.78)',
   }).rotation.z = LANE_SKEW;
 
   // ---------------------------------------------------------------- 通用格位
@@ -269,6 +275,7 @@ export function createBoard(): BoardView {
       worldHeight: 0.44,
       color: inkColor,
       bold: true,
+      background: labelPlate,
     }).rotation.z = LANE_SKEW;
   });
 
@@ -303,7 +310,7 @@ export function createBoard(): BoardView {
       p.x + 0.48,
       0.405,
       p.z,
-      { worldHeight: 0.4, color: inkColor, bold: true },
+      { worldHeight: 0.4, color: inkColor, bold: true, background: labelPlate },
     );
   });
 
@@ -343,6 +350,7 @@ export function createBoard(): BoardView {
       worldHeight: 0.28,
       color: inkColor,
       bold: true,
+      background: labelPlate,
     });
   }
 
@@ -396,6 +404,7 @@ export function createBoard(): BoardView {
       worldHeight: 0.34,
       color: inkColor,
       bold: true,
+      background: labelPlate,
     });
   }
 
@@ -422,6 +431,7 @@ export function createBoard(): BoardView {
     worldHeight: 0.34,
     color: inkColor,
     bold: true,
+    background: labelPlate,
   });
 
   billboard(group, '保险处', SIDE_BLOCKS.insurance.x, 1.4, SIDE_BLOCKS.insurance.z, {
@@ -514,6 +524,13 @@ export function createBoard(): BoardView {
   }
   const boatAnims: (BoatAnim | null)[] = boats.map(() => null);
 
+  /**
+   * 结算统一进港演出（用户确认）：航行阶段（placement/pilot/movement）里已抵达的船
+   * 只在第 13 格候补，等第三次投掷结束进入 payout 才批量跃入港湾/船厂。
+   * 仅影响渲染层，规则层照常提前记录 arrivedSlot。
+   */
+  let showDocked = true;
+
   /** 船在斜航道 / 斜码头上要顺着水道朝向；进修船场（竖直一列）时归正 */
   function boatYaw(state: BoatState | undefined): number {
     return state?.shipyardSlot === null || state?.shipyardSlot === undefined ? LANE_SKEW : 0;
@@ -522,6 +539,10 @@ export function createBoard(): BoardView {
   function boatPositionOf(index: number, boats0: readonly BoatState[]): THREE.Vector3 {
     const state = boats0[index];
     if (state?.arrivedSlot !== null && state?.arrivedSlot !== undefined) {
+      if (!showDocked) {
+        const p = laneSpacePosition(state.lane ?? index, LANE_LAST_SPACE);
+        return new THREE.Vector3(p.x, BOAT_Y, p.z);
+      }
       const p = skewOffset(portSlotPosition(state.arrivedSlot), 0, 0.38);
       return new THREE.Vector3(p.x, BOAT_Y, p.z);
     }
@@ -584,7 +605,8 @@ export function createBoard(): BoardView {
       boatAnims[index] = null;
     },
 
-    syncBoats(next, immediate = false) {
+    syncBoats(next, immediate = false, nextShowDocked = true) {
+      showDocked = nextShowDocked;
       next.forEach((state, index) => {
         const boatGroup = boats[index]?.group;
         if (!boatGroup) return;
@@ -603,14 +625,15 @@ export function createBoard(): BoardView {
           const arrived =
             state.arrivedSlot !== null || state.shipyardSlot !== null;
           if (!goingSame && (target.distanceToSquared(boatGroup.position) > 1e-4 || Math.abs(yaw - boatGroup.rotation.y) > 1e-4)) {
+            const dur = arrived ? 1.7 : 0.9;
             boatAnims[index] = {
               from: boatGroup.position.clone(),
               to: target.clone(),
               yawFrom: boatGroup.rotation.y,
               yawTo: yaw,
-              // 负值 = 等待期：先让骰子落地演出播完，船再起步
-              t: -1.15 / (arrived ? 1.7 : 0.9),
-              dur: arrived ? 1.7 : 0.9,
+              // 负值 = 等待期：普通航行先等骰子落地演出；结算进港按船次错峰，一艘艘跃入港湾
+              t: -(arrived ? 0.15 + index * 0.5 : 1.15) / dur,
+              dur,
               hop: arrived ? 0.24 : 0,
             };
           }
@@ -661,7 +684,8 @@ export function createBoard(): BoardView {
         anim.t += deltaSeconds / anim.dur;
         if (anim.t < 0) return;
         const e = Math.min(1, anim.t);
-        const k = e < 0.5 ? 2 * e * e : 1 - (2 - 2 * e) * (2 - 2 * e) / 2;
+        // 三次缓入缓出：对应用心做的 strong ease-in-out（二次太弱，船像在匀速漂）
+        const k = e < 0.5 ? 4 * e * e * e : 1 - Math.pow(2 - 2 * e, 3) / 2;
         boatGroup.position.lerpVectors(anim.from, anim.to, k);
         if (anim.hop > 0) boatGroup.position.y += Math.sin(Math.PI * e) * anim.hop;
         boatGroup.rotation.y = anim.yawFrom + (anim.yawTo - anim.yawFrom) * k;
