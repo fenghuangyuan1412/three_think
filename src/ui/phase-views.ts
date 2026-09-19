@@ -117,6 +117,9 @@ export function renderPhaseView(ctx: PhaseViewContext): HTMLElement {
     case 'movement':
       wrap.appendChild(movementView(ctx));
       break;
+    case 'pirate-boarding':
+      wrap.appendChild(pirateBoardingView(ctx));
+      break;
     case 'negotiation': {
       const box = section('谈判与转账');
       box.appendChild(el('p', 'hint', '交易窗口已显示在屏幕中央，请在其中完成转账或确认。'));
@@ -532,6 +535,34 @@ function pilotView(ctx: PhaseViewContext): HTMLElement {
   return box;
 }
 
+// ---------------------------------------------------------------- 海盗选择登船
+
+function pirateBoardingView(ctx: PhaseViewContext): HTMLElement {
+  const { state, emit } = ctx;
+  const captain = state.pirateCaptain;
+  const box = section('海盗船长选择登船目标');
+  box.appendChild(el('p', 'hint', `海盗船长：${playerName(state, captain)}`));
+  box.appendChild(
+    el('p', 'hint', '多艘船同时停在第 13 格。船长挑一艘，全体海盗跳上那艘船的海盗甲板——不占货仓、不挤任何人，但该船若抵达港口，整船货款归海盗。'),
+  );
+  if (!canActHere(ctx, captain)) {
+    box.appendChild(waitingNote(state, captain));
+    return box;
+  }
+  const list = el('div', 'spot-list');
+  for (const boatIndex of state.pirateBoardPending) {
+    const info = state.boats[boatIndex];
+    if (!info) continue;
+    list.appendChild(
+      button(`登上第 ${info.lane + 1} 航道（${info.good ? goodName(info.good) : '空'}）`, 'spot', () => {
+        if (captain) emit({ type: 'pirate-board', playerId: captain, boat: boatIndex });
+      }),
+    );
+  }
+  box.appendChild(list);
+  return box;
+}
+
 // ---------------------------------------------------------------- 海盗去向
 
 function pirateView(ctx: PhaseViewContext): HTMLElement {
@@ -618,7 +649,31 @@ function payoutView(ctx: PhaseViewContext): HTMLElement {
     );
   }
 
-  box.appendChild(button('继续', 'btn btn--primary btn--wide', () => emit({ type: 'advance' })));
+  // 每人各自看完各自确认，任何人都不能替别人把这一屏点掉
+  const pending = state.players.filter((p) => !state.payoutConfirmed.includes(p.id));
+  if (pending.length === 0) {
+    box.appendChild(el('p', 'hint', '全员已确认看完，即将进入货物涨价。'));
+  } else {
+    const row = el('div', 'row row--field');
+    row.appendChild(el('span', 'row__label', '已确认看完'));
+    row.appendChild(
+      el('strong', 'kv__v', `${state.payoutConfirmed.length} / ${state.players.length}`),
+    );
+    box.appendChild(row);
+    for (const p of pending) {
+      if (ctx.you !== null && ctx.you !== p.id) continue;
+      box.appendChild(
+        button(`${p.name} · 我看完了`, 'btn btn--primary btn--wide', () =>
+          emit({ type: 'payout-viewed', playerId: p.id }),
+        ),
+      );
+    }
+    if (ctx.you === null) {
+      box.appendChild(
+        el('p', 'hint', '热座模式：轮到的玩家逐个点自己的「我看完了」，全员确认后才会继续。'),
+      );
+    }
+  }
   return box;
 }
 
@@ -722,6 +777,7 @@ export function phaseTitle(state: GameState): string {
     launch: '港务长放船',
     placement: '放置小弟',
     movement: '掷骰推船',
+    'pirate-boarding': '海盗选择登船',
     negotiation: '谈判与转账',
     pilot: '领航员',
     'pirate-destination': '海盗决定去向',
@@ -736,10 +792,11 @@ export function phaseTitle(state: GameState): string {
 export { movementRoundOf };
 
 export function occupiedSpotSummary(state: GameState): string {
-  const counts = { hold: 0, port: 0, shipyard: 0, pirate: 0, pilot: 0, insurance: 0 };
+  const counts = { hold: 0, deck: 0, port: 0, shipyard: 0, pirate: 0, pilot: 0, insurance: 0 };
   for (const p of state.placements) counts[p.spot.kind] += 1;
   const parts: string[] = [];
   if (counts.hold) parts.push(`货仓 ${counts.hold}`);
+  if (counts.deck) parts.push(`海盗甲板 ${counts.deck}`);
   if (counts.port) parts.push(`港口 ${counts.port}/3`);
   if (counts.shipyard) parts.push(`修船场 ${counts.shipyard}/3`);
   if (counts.pirate) parts.push(`海盗 ${counts.pirate}/2`);

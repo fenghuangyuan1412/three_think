@@ -26,6 +26,7 @@ export type PilotSize = 'small' | 'large';
 /** 一个可放置小弟的格位 */
 export type SpotRef =
   | { readonly kind: 'hold'; readonly boat: number; readonly space: number }
+  | { readonly kind: 'deck'; readonly boat: number; readonly space: number }
   | { readonly kind: 'port'; readonly slot: number }
   | { readonly kind: 'shipyard'; readonly slot: number }
   | { readonly kind: 'pirate'; readonly space: number }
@@ -36,6 +37,8 @@ export function spotKey(spot: SpotRef): string {
   switch (spot.kind) {
     case 'hold':
       return `hold:${spot.boat}:${spot.space}`;
+    case 'deck':
+      return `deck:${spot.boat}:${spot.space}`;
     case 'port':
       return `port:${spot.slot}`;
     case 'shipyard':
@@ -55,6 +58,8 @@ export function spotLabel(spot: SpotRef, goodNames: (g: GoodId) => string, boatG
       const good = boatGood(spot.boat);
       return `${good ? goodNames(good) : '空'}货仓 第 ${spot.space + 1} 格`;
     }
+    case 'deck':
+      return `海盗甲板 ${spot.space === 0 ? '（船长位）' : `（${spot.space + 1} 号位）`}`;
     case 'port':
       return `港口 ${'ABC'[spot.slot] ?? '?'}`;
     case 'shipyard':
@@ -79,8 +84,8 @@ export interface Placement {
   /**
    * 是否是「从海盗船登船」上来的海盗。
    *
-   * 必须与普通货仓小弟区分：被劫掠时，普通小弟空手而回，只有海盗参与均分劫掠所得。
-   * 登船后 spot 会变成货仓格，所以只能靠这个标记识别。
+   * 必须与普通货仓小弟区分：被劫掠时，普通小弟空手而回，只有海盗参与均分劫掠所得；
+   * 抵达港口时，甲板海盗截获整船货款。
    */
   readonly fromPirate: boolean;
 }
@@ -93,6 +98,9 @@ export function spotCost(spot: SpotRef): number {
     case 'hold':
       // 费用取决于该船装的哪块货仓
       return 0; // 由 holdCost() 按船与格位算，见下
+    case 'deck':
+      // 甲板不是放置格位，只有登船的海盗会站上去，无费用
+      return 0;
     case 'port':
       return PORT_SPACES[spot.slot]?.cost ?? 0;
     case 'shipyard':

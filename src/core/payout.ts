@@ -73,6 +73,9 @@ export function settleVoyage(input: SettleInput): {
   const onHold = (boatIndex: number): Placement[] =>
     placements.filter((p) => p.spot.kind === 'hold' && p.spot.boat === boatIndex);
 
+  const onDeck = (boatIndex: number): Placement[] =>
+    placements.filter((p) => p.spot.kind === 'deck' && p.spot.boat === boatIndex);
+
   // ---- 1) 货仓与海盗 ----
   boats.forEach((boat, boatIndex) => {
     if (boat.good === null) return;
@@ -80,11 +83,11 @@ export function settleVoyage(input: SettleInput): {
 
     const load = getWareLoad(boat.good);
     const occupants = onHold(boatIndex);
+    const pirates = onDeck(boatIndex);
 
     if (boat.plundered) {
       // 被劫掠：普通货仓小弟空手而回，只有登船的海盗均分劫掠所得
-      const pirates = occupants.filter((p) => p.fromPirate);
-      const victims = occupants.filter((p) => !p.fromPirate);
+      const victims = occupants;
 
       if (victims.length > 0) {
         notes.push(
@@ -112,6 +115,27 @@ export function settleVoyage(input: SettleInput): {
     }
 
     if (boat.arrivedSlot !== null) {
+      if (pirates.length > 0) {
+        // 船上载着登船海盗：整船货款归海盗（多名海盗在甲板内部均分），货仓小弟空手而回
+        const each = splitEvenly(load.totalReward, pirates.length);
+        for (const p of pirates) {
+          lines.push({
+            playerId: p.playerId,
+            amount: each,
+            reason: `押船 ${load.good} 抵达，截获整船货款`,
+            source: 'bank',
+          });
+        }
+        if (occupants.length > 0) {
+          notes.push(
+            `第 ${boat.lane + 1} 航道的船带着海盗抵达，货仓上 ${occupants.length} 名小弟空手而回。`,
+          );
+        }
+        notes.push(
+          `${load.good} 整船货值 ${load.totalReward} 元由 ${pirates.length} 名登船海盗各得 ${each} 元。`,
+        );
+        return;
+      }
       if (occupants.length === 0) return;
       const each = splitEvenly(load.totalReward, occupants.length);
       for (const p of occupants) {

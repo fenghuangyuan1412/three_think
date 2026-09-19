@@ -136,8 +136,8 @@ export function createRoom(accounts: readonly AccountEntry[]): Room {
         if (intent.playerId !== seat) {
           return fail('seat-mismatch', '不能替别的座位出操作。');
         }
-        // 谈判阶段是多人并行的，没有「轮到谁」；其余阶段必须等行动者
-        if (state.phase !== 'negotiation') {
+        // 谈判与利润分配是多人并行自助阶段，没有「轮到谁」；其余阶段必须等行动者
+        if (state.phase !== 'negotiation' && state.phase !== 'payout') {
           const actor = currentDecisionActor(state);
           if (actor !== seat) {
             return fail('not-your-turn', '还没轮到你。');

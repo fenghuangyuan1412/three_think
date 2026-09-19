@@ -335,22 +335,34 @@ export function previewSpot(ctx: PlacementContext, spot: SpotRef): SpotPreview {
       };
     }
 
+    case 'deck':
+      // 甲板不是放置格位，只有登船的海盗会站上去；这里仅为穷举兜底
+      return {
+        cost,
+        potential: 0,
+        condition: '海盗登船后的专属区，不能从这里放置',
+        shared: true,
+      };
+
     case 'pirate':
       return {
         cost,
         potential: 0,
-        condition: '有船在本航程结束时停在第 13 格，即可登船 / 劫掠它的货物',
+        condition: '第 1、2 轮有船停第 13 格时登船占甲板；第 3 轮起海盗直接劫掠停第 13 格的船',
         shared: true,
-        note: '劫掠所得由船上的海盗均分；若走的是登船路线，船平安进港则与货仓小弟一起平分',
+        note: '登船后：该船抵达港口则整船货款归船上海盗均分；劫掠所得也只由海盗均分',
       };
 
     case 'pilot':
       return {
         cost,
         potential: 0,
-        condition: '无直接收益：在最后一次移动前推动或拉回船只',
+        condition: '无直接收益：三次投骰全部结束后推动或拉回船只',
         shared: false,
-        note: spot.size === 'small' ? '小领航员：1 艘船移动 1 格' : '大领航员：1 艘船移动 2 格，或 2 艘各 1 格',
+        note:
+          spot.size === 'small'
+            ? '小领航员：每艘海上的船都可以移动一次 ±1 格'
+            : '大领航员：每艘海上的船都可以移动一次 ±2 格',
       };
 
     case 'insurance':

@@ -139,6 +139,7 @@ export function bootApp(root: HTMLElement): void {
       next.phase !== 'placement' &&
       next.phase !== 'negotiation' &&
       next.phase !== 'pilot' &&
+      next.phase !== 'pirate-boarding' &&
       next.phase !== 'movement';
     board.syncBoats(next.boats, noAnim, showDocked);
 

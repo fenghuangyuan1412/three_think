@@ -566,6 +566,12 @@ export function createBoard(): BoardView {
     return new THREE.Vector3(0, 0.36 / BOAT_SCALE, dz);
   }
 
+  /** 海盗甲板：船头的专属区，多名登船海盗沿舷侧排开 */
+  function deckLocalOffset(spot: Extract<SpotRef, { kind: 'deck' }>): THREE.Vector3 {
+    const dz = (-0.42 + spot.space * 0.18) / BOAT_SCALE;
+    return new THREE.Vector3(0.08 / BOAT_SCALE, 0.44 / BOAT_SCALE, dz);
+  }
+
   function staticSpotPosition(spot: SpotRef): THREE.Vector3 {
     switch (spot.kind) {
       case 'port': {
@@ -589,6 +595,7 @@ export function createBoard(): BoardView {
       case 'insurance':
         return new THREE.Vector3(SIDE_BLOCKS.insurance.x, 0.82, SIDE_BLOCKS.insurance.z);
       case 'hold':
+      case 'deck':
         return new THREE.Vector3();
     }
   }
@@ -660,14 +667,23 @@ export function createBoard(): BoardView {
         base.add(holdLocalOffset(spot, boats0).multiplyScalar(BOAT_SCALE));
         return base;
       }
+      if (spot.kind === 'deck') {
+        const g = boats[spot.boat]?.group;
+        const base = g ? g.position.clone() : new THREE.Vector3();
+        base.add(deckLocalOffset(spot).multiplyScalar(BOAT_SCALE));
+        return base;
+      }
       return staticSpotPosition(spot);
     },
 
     spotAnchor(spot, boats0) {
-      if (spot.kind === 'hold') {
+      if (spot.kind === 'hold' || spot.kind === 'deck') {
         const boatGroup = boats[spot.boat]?.group;
         if (boatGroup) {
-          return { parent: boatGroup, position: holdLocalOffset(spot, boats0) };
+          return {
+            parent: boatGroup,
+            position: spot.kind === 'hold' ? holdLocalOffset(spot, boats0) : deckLocalOffset(spot),
+          };
         }
       }
       return { parent: group, position: staticSpotPosition(spot) };

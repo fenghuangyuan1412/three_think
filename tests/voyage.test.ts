@@ -25,7 +25,7 @@ import {
 } from '../src/core/game';
 import { validateLaunch, validateLoad } from '../src/core/master';
 import { availableSpots, costOf } from '../src/core/placement';
-import { advanceBoats, resolveEndOfVoyage, rollDice } from '../src/core/movement';
+import { advanceBoats, boardPirates, resolveEndOfVoyage, rollDice } from '../src/core/movement';
 import { createRng } from '../src/core/rng';
 import { settleVoyage } from '../src/core/payout';
 import type { BoatState, Placement } from '../src/core/voyage';
@@ -104,6 +104,9 @@ function pickIntent(s: GameState): Intent | null {
       const ctx = placementContext(s);
       const spots = availableSpots(ctx);
       if (spots.length === 0) return { type: 'decline-placement', playerId: who };
+      // 偶尔抢海盗位，让整局测试覆盖登船 / 挑船链路
+      const pirate = spots.find((spot) => spot.kind === 'pirate');
+      if (pirate && s.voyage % 2 === 0) return { type: 'place', playerId: who, spot: pirate };
       const cheapest = spots.reduce((best, spot) =>
         costOf(ctx, spot) < costOf(ctx, best) ? spot : best,
       );
@@ -117,14 +120,23 @@ function pickIntent(s: GameState): Intent | null {
       const cur = currentPilot(s);
       return cur ? { type: 'pilot-skip', playerId: cur.playerId } : null;
     }
+    case 'pirate-boarding': {
+      const who = s.pirateCaptain ?? s.placements.find((p) => p.spot.kind === 'pirate')?.playerId;
+      const boat = s.pirateBoardPending[0];
+      if (!who || boat === undefined) return null;
+      return { type: 'pirate-board', playerId: who, boat };
+    }
     case 'pirate-destination': {
       const who = currentPirateDecider(s);
       const boat = s.piratePending[0];
       if (!who || boat === undefined) return null;
       return { type: 'pirate-destination', playerId: who, boat, destination: 'port' };
     }
+    case 'payout': {
+      const who = s.players.find((p) => !s.payoutConfirmed.includes(p.id));
+      return who ? { type: 'payout-viewed', playerId: who.id } : null;
+    }
     case 'movement':
-    case 'payout':
     case 'price-rise':
       return { type: 'advance' };
     default:
@@ -430,7 +442,7 @@ describe('利润分配与保险', () => {
     ];
     const placements: Placement[] = [
       { playerId: 'victim', spot: { kind: 'hold', boat: 0, space: 0 }, cost: 1, blind: false, fromPirate: false },
-      { playerId: 'pirate', spot: { kind: 'hold', boat: 0, space: 1 }, cost: 0, blind: false, fromPirate: true },
+      { playerId: 'pirate', spot: { kind: 'deck', boat: 0, space: 0 }, cost: 0, blind: false, fromPirate: true },
     ];
     const players = ['victim', 'pirate'].map((id) => ({
       id, name: id, color: '#000', cash: 0, shares: [], accomplicesTotal: 3,
@@ -442,6 +454,34 @@ describe('利润分配与保险', () => {
 
     expect(after.find((p) => p.id === 'victim')?.cash).toBe(0);
     expect(after.find((p) => p.id === 'pirate')?.cash).toBe(load.totalReward);
+  });
+
+  it('带着登船海盗的船抵达港口：整船货款归海盗，货仓小弟空手', () => {
+    const good = 'silk' as const;
+    const load = getWareLoad(good);
+    const boats: BoatState[] = [
+      { lane: 0, good, position: LANE_LAST_SPACE, arrivedSlot: 0, shipyardSlot: null, plundered: false },
+    ];
+    const placements: Placement[] = [
+      { playerId: 'crew-a', spot: { kind: 'hold', boat: 0, space: 0 }, cost: 1, blind: false, fromPirate: false },
+      { playerId: 'crew-b', spot: { kind: 'hold', boat: 0, space: 1 }, cost: 1, blind: false, fromPirate: false },
+      { playerId: 'captain', spot: { kind: 'deck', boat: 0, space: 0 }, cost: 0, blind: false, fromPirate: true },
+      { playerId: 'mate', spot: { kind: 'deck', boat: 0, space: 1 }, cost: 0, blind: false, fromPirate: true },
+    ];
+    const players = ['crew-a', 'crew-b', 'captain', 'mate'].map((id) => ({
+      id, name: id, color: '#000', cash: 0, shares: [], accomplicesTotal: 3,
+    }));
+
+    const { players: after } = settleVoyage({
+      boats, placements, players, priceOf: () => 5, nameOf: (id) => id,
+    });
+
+    expect(after.find((p) => p.id === 'crew-a')?.cash).toBe(0);
+    expect(after.find((p) => p.id === 'crew-b')?.cash).toBe(0);
+    // 两名海盗在甲板内部均分整船货款，余数留钱箱
+    const each = Math.floor(load.totalReward / 2);
+    expect(after.find((p) => p.id === 'captain')?.cash).toBe(each);
+    expect(after.find((p) => p.id === 'mate')?.cash).toBe(each);
   });
 });
 
@@ -571,6 +611,110 @@ describe('领航员（每船一次，新额度）', () => {
     }
     // 小领航员行动完（没人当大领航员）→ 航程收尾
     expect(['payout', 'pirate-destination']).toContain(s.phase);
+  });
+});
+
+// ---------------------------------------------------------------- 海盗登船
+
+describe('海盗登船（甲板专属区，船长挑船）', () => {
+  const atSea = (lane: number, good: string): BoatState => ({
+    lane,
+    good: good as BoatState['good'],
+    position: 7,
+    arrivedSlot: null,
+    shipyardSlot: null,
+    plundered: false,
+  });
+
+  it('boardPirates：海盗跳上甲板，不占货仓格、不挤走原有小弟，货仓满了也照上', () => {
+    const placements: Placement[] = [
+      // 货仓已放满三名小弟
+      { playerId: 'crew-a', spot: { kind: 'hold', boat: 0, space: 0 }, cost: 1, blind: false, fromPirate: false },
+      { playerId: 'crew-b', spot: { kind: 'hold', boat: 0, space: 1 }, cost: 1, blind: false, fromPirate: false },
+      { playerId: 'crew-c', spot: { kind: 'hold', boat: 0, space: 2 }, cost: 1, blind: false, fromPirate: false },
+      { playerId: 'captain', spot: { kind: 'pirate', space: 0 }, cost: 5, blind: false, fromPirate: false },
+      { playerId: 'mate', spot: { kind: 'pirate', space: 1 }, cost: 5, blind: false, fromPirate: false },
+    ];
+    const boats = [atSea(0, 'silk'), atSea(1, 'jade')];
+
+    const result = boardPirates(boats, placements, 0);
+    const deck = result.placements.filter((p) => p.spot.kind === 'deck');
+    expect(deck).toHaveLength(2);
+    expect(deck.every((p) => p.spot.kind === 'deck' && p.spot.boat === 0 && p.fromPirate)).toBe(true);
+    // 船长位在前，位置保留
+    expect(deck[0]!.playerId).toBe('captain');
+    expect(deck[1]!.playerId).toBe('mate');
+    // 原货仓小弟一个没被踢
+    expect(result.placements.filter((p) => p.spot.kind === 'hold')).toHaveLength(3);
+    // 海盗船上没人了
+    expect(result.placements.some((p) => p.spot.kind === 'pirate')).toBe(false);
+  });
+
+  /** 造一个停在「等船长挑船」的局面：两名海盗在船、第三人手工放在 2 号船货仓（不掷骰） */
+  function boardingState(): GameState {
+    let s = runMasterDuties(runAuction(startVoyageForTest(3)));
+    const first = currentPlacementPlayer(s)!;
+    s = step(s, { type: 'place', playerId: first, spot: { kind: 'pirate', space: 0 } });
+    const second = currentPlacementPlayer(s)!;
+    s = step(s, { type: 'place', playerId: second, spot: { kind: 'pirate', space: 1 } });
+    const third = currentPlacementPlayer(s)!;
+    return {
+      ...s,
+      phase: 'pirate-boarding',
+      pirateBoardPending: [0, 1],
+      placements: [
+        ...s.placements,
+        { playerId: third, spot: { kind: 'hold', boat: 2, space: 0 }, cost: 1, blind: false, fromPirate: false },
+      ],
+    };
+  }
+
+  it('多艘候选：只有船长能挑，挑中的船全员登甲板，未选船不受影响', () => {
+    const s = boardingState();
+    const captain = s.pirateCaptain!;
+    const crew = s.players.find((p) => !s.placements.some((q) => q.playerId === p.id && q.spot.kind === 'pirate'))!;
+
+    const wrong = applyIntent(s, { type: 'pirate-board', playerId: crew.id, boat: 1 });
+    expect(wrong.ok).toBe(false);
+    if (!wrong.ok) expect(wrong.error.code).toBe('not-your-turn');
+
+    const notPending = applyIntent(s, { type: 'pirate-board', playerId: captain, boat: 2 });
+    expect(notPending.ok).toBe(false);
+    if (!notPending.ok) expect(notPending.error.code).toBe('not-pending');
+
+    const next = step(s, { type: 'pirate-board', playerId: captain, boat: 1 });
+    expect(next.phase).toBe('movement');
+    expect(next.pirateBoardPending).toEqual([]);
+    expect(next.placements.every((p) => p.spot.kind !== 'deck' || p.spot.boat === 1)).toBe(true);
+    expect(next.placements.filter((p) => p.spot.kind === 'deck')).toHaveLength(2);
+    // 第三名玩家仍稳稳在 2 号船货仓
+    expect(next.placements.find((p) => p.spot.kind === 'hold')!.spot).toEqual({ kind: 'hold', boat: 2, space: 0 });
+  });
+
+  it('利润分配必须每人各自确认，最后一人确认后才进涨价', () => {
+    let s = runMasterDuties(runAuction(startVoyageForTest(3)));
+    s = driveToNegotiation(s);
+    for (const p of [...s.players]) {
+      s = step(s, { type: 'negotiation-done', playerId: p.id });
+    }
+    expect(s.phase).toBe('payout');
+    expect(s.payoutConfirmed).toEqual([]);
+
+    // 「继续」不再被接受
+    expect(applyIntent(s, { type: 'advance' }).ok).toBe(false);
+
+    const pending = s.players.slice(0, -1);
+    for (const p of pending) {
+      s = step(s, { type: 'payout-viewed', playerId: p.id });
+      expect(s.phase).toBe('payout');
+    }
+    // 重复确认被拒
+    const dup = applyIntent(s, { type: 'payout-viewed', playerId: pending[0]!.id });
+    expect(dup.ok).toBe(false);
+    if (!dup.ok) expect(dup.error.code).toBe('already-confirmed');
+    // 最后一人确认 → 涨价
+    s = step(s, { type: 'payout-viewed', playerId: s.players.at(-1)!.id });
+    expect(s.phase).toBe('price-rise');
   });
 });
 

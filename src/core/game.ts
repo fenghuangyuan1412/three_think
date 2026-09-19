@@ -82,6 +82,7 @@ export type GamePhase =
   | 'launch'
   | 'placement'
   | 'movement'
+  | 'pirate-boarding'
   | 'negotiation'
   | 'pilot'
   | 'pirate-destination'
@@ -120,6 +121,10 @@ export interface GameState {
   readonly pirateCaptain: PlayerId | null;
   /** 待决定去向的被劫掠船只下标 */
   readonly piratePending: readonly number[];
+  /** 停第 13 格、等海盗船长挑选登船目标的船只下标（仅第 1、2 轮使用） */
+  readonly pirateBoardPending: readonly number[];
+  /** 利润分配阶段已点「我看完了」的玩家；全员确认后才继续涨价/下一航程 */
+  readonly payoutConfirmed: readonly PlayerId[];
   /** 领航员阶段：还没行动的领航员（先小后大） */
   readonly pilotPending: readonly PilotSize[];
   /** 本段航程已经转过账的玩家（每人每段航程只能主动转出一次） */
@@ -149,6 +154,8 @@ export type Intent =
   | { readonly type: 'decline-placement'; readonly playerId: PlayerId }
   | { readonly type: 'pilot-move'; readonly playerId: PlayerId; readonly moves: readonly PilotMove[] }
   | { readonly type: 'pilot-skip'; readonly playerId: PlayerId }
+  | { readonly type: 'pirate-board'; readonly playerId: PlayerId; readonly boat: number }
+  | { readonly type: 'payout-viewed'; readonly playerId: PlayerId }
   | {
       readonly type: 'transfer';
       readonly playerId: PlayerId;
@@ -254,6 +261,8 @@ export function createGame(options: CreateGameOptions): GameState {
     dice: null,
     pirateCaptain: null,
     piratePending: [],
+    pirateBoardPending: [],
+    payoutConfirmed: [],
     pilotPending: [],
     transferredThisVoyage: [],
     negotiationConfirmed: [],
@@ -294,6 +303,8 @@ export function startVoyage(state: GameState): GameState {
     dice: null,
     pirateCaptain: null,
     piratePending: [],
+    pirateBoardPending: [],
+    payoutConfirmed: [],
     pilotPending: [],
     transferredThisVoyage: [],
     negotiationConfirmed: [],
@@ -375,8 +386,9 @@ export function currentAuctionPlayer(state: GameState): PlayerId | null {
 
 /**
  * 需要指定玩家做决定的阶段里，当前该行动的人；
- * 推进类阶段（movement / payout / price-rise / game-over / setup）返回 null，
- * 表示谁点「继续」都行。联机模式下服务端校验与客户端 UI 门控共用这一份真源。
+ * 推进类阶段（movement / price-rise / game-over / setup）与并发自助阶段
+ * （negotiation、payout —— 每人各自确认，无顺序）返回 null。
+ * 联机模式下服务端校验与客户端 UI 门控共用这一份真源。
  */
 export function currentDecisionActor(state: GameState): PlayerId | null {
   switch (state.phase) {
@@ -390,8 +402,9 @@ export function currentDecisionActor(state: GameState): PlayerId | null {
       return currentPlacementPlayer(state);
     case 'pilot':
       return currentPilot(state)?.playerId ?? null;
+    case 'pirate-boarding':
     case 'pirate-destination':
-      return currentPirateDecider(state);
+      return state.pirateCaptain;
     default:
       return null;
   }
@@ -420,6 +433,8 @@ export function applyIntent(state: GameState, intent: Intent): IntentOutcome {
       return handlePlacement(state, intent);
     case 'movement':
       return handleMovementAdvance(state, intent);
+    case 'pirate-boarding':
+      return handlePirateBoarding(state, intent);
     case 'negotiation':
       return handleNegotiation(state, intent);
     case 'pilot':
@@ -427,7 +442,7 @@ export function applyIntent(state: GameState, intent: Intent): IntentOutcome {
     case 'pirate-destination':
       return handlePirateDestination(state, intent);
     case 'payout':
-      return handlePayoutAdvance(state, intent);
+      return handlePayout(state, intent);
     case 'price-rise':
       return handlePriceRiseAdvance(state, intent);
     default:
@@ -676,17 +691,23 @@ function runMovement(state: GameState): GameState {
     log: [...state.log, diceLine, ...moved.notes],
   };
 
-  // 海盗触发：移动回合结束时恰好停在第 13 格的船
+  // 海盗触发：移动回合结束时恰好停在第 13 格的船。
+  // 第 1、2 轮登船（多艘候选时由海盗船长挑一艘，全船海盗跳上它的甲板）；
+  // 第 3 轮再登船已无意义，直接劫掠。
   const onThirteen = boatsOnThirteen(next.boats);
   if (onThirteen.length > 0 && hasPirate(next.placements)) {
-    for (const boatIndex of onThirteen) {
-      if (round >= 3) {
+    if (round >= 3) {
+      for (const boatIndex of onThirteen) {
         const result = plunderBoat(next.boats, boatIndex);
         next = withLog({ ...next, boats: result.boats }, result.notes);
-      } else {
-        const result = boardPirates(next.boats, next.placements, boatIndex);
-        next = withLog({ ...next, boats: result.boats, placements: result.placements }, result.notes);
       }
+    } else if (onThirteen.length === 1) {
+      const result = boardPirates(next.boats, next.placements, onThirteen[0] ?? 0);
+      next = withLog({ ...next, boats: result.boats, placements: result.placements }, result.notes);
+    } else {
+      next = withLog({ ...next, phase: 'pirate-boarding', pirateBoardPending: onThirteen }, [
+        `有 ${onThirteen.length} 艘船停在第 13 格，等海盗船长选择登上哪一艘。`,
+      ]);
     }
   } else if (onThirteen.length > 0) {
     next = withLog(next, ['有船停在第 13 格，但海盗船上没有人。']);
@@ -698,6 +719,31 @@ function runMovement(state: GameState): GameState {
 function handleMovementAdvance(state: GameState, intent: Intent): IntentOutcome {
   if (intent.type !== 'advance') return err('wrong-intent', '移动阶段只能点「继续」。');
   return okState(enterStep({ ...state, stepIndex: state.stepIndex + 1 }));
+}
+
+// ---------------------------------------------------------------- 海盗选择登船
+
+function handlePirateBoarding(state: GameState, intent: Intent): IntentOutcome {
+  if (intent.type !== 'pirate-board') return err('wrong-intent', '海盗船长需要选择登上哪艘船。');
+  const captain = state.pirateCaptain ?? piratesInOrder(state.placements)[0]?.playerId ?? null;
+  if (!captain) return err('no-captain', '没有海盗船长。');
+  if (intent.playerId !== captain) {
+    return err('not-your-turn', '只有海盗船长可以选择登船目标。');
+  }
+  if (!state.pirateBoardPending.includes(intent.boat)) {
+    return err('not-pending', '这艘船不在登船候选里。');
+  }
+
+  const result = boardPirates(state.boats, state.placements, intent.boat);
+  const next: GameState = {
+    ...state,
+    boats: result.boats,
+    placements: result.placements,
+    pirateBoardPending: [],
+    phase: 'movement',
+    log: [...state.log, ...result.notes],
+  };
+  return okState(next);
 }
 
 // ---------------------------------------------------------------- 放置小弟
@@ -988,14 +1034,29 @@ function beginPayout(state: GameState): GameState {
     nameOf: (id) => findPlayer(state.players, id)?.name ?? id,
   });
 
-  return withLog({ ...state, phase: 'payout', players, payout: report, piratePending: [] }, [
-    '── 利润分配 ──',
-    ...report.notes,
-  ]);
+  return withLog(
+    { ...state, phase: 'payout', players, payout: report, piratePending: [], payoutConfirmed: [] },
+    ['── 利润分配 ──', ...report.notes],
+  );
 }
 
-function handlePayoutAdvance(state: GameState, intent: Intent): IntentOutcome {
-  if (intent.type !== 'advance') return err('wrong-intent', '结算阶段只能点「继续」。');
+/** 利润分配是并发自助阶段：每人看完本回合收益后各自确认，全员确认才继续 */
+function handlePayout(state: GameState, intent: Intent): IntentOutcome {
+  if (intent.type !== 'payout-viewed') {
+    return err('wrong-intent', '利润分配阶段每位玩家看完后点「我看完了」。');
+  }
+  const player = findPlayer(state.players, intent.playerId);
+  if (!player) return err('unknown-player', '找不到玩家。');
+  if (state.payoutConfirmed.includes(player.id)) {
+    return err('already-confirmed', '你已经确认看完了。');
+  }
+  const confirmed = [...state.payoutConfirmed, player.id];
+  const next = { ...state, payoutConfirmed: confirmed };
+  if (state.players.some((p) => !confirmed.includes(p.id))) return okState(next);
+  return okState(advanceAfterPayout(next));
+}
+
+function advanceAfterPayout(state: GameState): GameState {
   const arrived = state.payout?.goodArrived ?? [];
 
   const priceIndex = { ...state.priceIndex };
@@ -1010,9 +1071,7 @@ function handlePayoutAdvance(state: GameState, intent: Intent): IntentOutcome {
   }
   if (arrived.length === 0) lines.push('本航程没有货物抵达港口，价格不变。');
 
-  return okState(
-    withLog({ ...state, phase: 'price-rise', priceIndex }, ['── 货物价格上升 ──', ...lines]),
-  );
+  return withLog({ ...state, phase: 'price-rise', priceIndex }, ['── 货物价格上升 ──', ...lines]);
 }
 
 function handlePriceRiseAdvance(state: GameState, intent: Intent): IntentOutcome {

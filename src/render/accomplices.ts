@@ -113,7 +113,7 @@ export function createAccomplices(): AccomplicesView {
         piece.position.copy(anchor.position);
         piece.position.y -= FOOT_SINK;
         // 棋子小、船在动：挂船上时稍微放大补回视觉尺寸
-        if (spot.kind === 'hold') piece.scale.setScalar(1 / BOAT_SCALE);
+        if (spot.kind === 'hold' || spot.kind === 'deck') piece.scale.setScalar(1 / BOAT_SCALE);
         anchor.parent.add(piece);
         spawned.push(piece);
       }

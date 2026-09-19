@@ -32,6 +32,8 @@ interface HoldRow {
   readonly occupants: number;
   readonly shareIfNow: number;
   readonly position: number;
+  /** 已登上这艘船的海盗数（>0 时抵达货款整船归海盗） */
+  readonly deckPirates: number;
 }
 
 export function renderEarningsTable(state: GameState): HTMLElement {
@@ -54,6 +56,7 @@ export function renderEarningsTable(state: GameState): HTMLElement {
       occupants,
       shareIfNow: Math.floor(load.totalReward / Math.max(1, occupants)),
       position: boat.position,
+      deckPirates: state.placements.filter((p) => p.spot.kind === 'deck' && p.spot.boat === i).length,
     });
   });
 
@@ -74,9 +77,11 @@ export function renderEarningsTable(state: GameState): HTMLElement {
         el(
           'span',
           'earnings__val',
-          row.occupants === 0
-            ? `总 ${row.total} · 现在放全拿`
-            : `总 ${row.total} · ${row.occupants} 人已分，每人 ${row.shareIfNow}`,
+          row.deckPirates > 0
+            ? `总 ${row.total} · 船上有 ${row.deckPirates} 名海盗，抵达则整船归海盗`
+            : row.occupants === 0
+              ? `总 ${row.total} · 现在放全拿`
+              : `总 ${row.total} · ${row.occupants} 人已分，每人 ${row.shareIfNow}`,
         ),
       );
       block.appendChild(line);
@@ -136,9 +141,9 @@ export function renderEarningsTable(state: GameState): HTMLElement {
   misc.appendChild(el('p', 'earnings__title', '其它位置'));
   const pirateOccupants = state.placements.filter((p) => p.spot.kind === 'pirate').length;
   for (const line of [
-    `海盗船 付 5 · 有船停在第 13 格时劫掠其货仓，由船上海盗平分（现有 ${pirateOccupants} 人）`,
-    '小领航员 付 2 · 无直接收益，最后移动前推 / 拉 1 格',
-    '大领航员 付 5 · 无直接收益，推 / 拉 2 格或两艘各 1 格',
+    `海盗船 付 5 · 第 1、2 轮有船停第 13 格时登船占甲板（船长挑船），该船抵达货款整船归海盗；第 3 轮直接劫掠（现有 ${pirateOccupants} 人在船）`,
+    '小领航员 付 2 · 无直接收益，三次投骰后每艘海上的船可推 / 拉 1 格',
+    '大领航员 付 5 · 无直接收益，三次投骰后每艘海上的船可推 / 拉 2 格',
     '保险处 免费 · 立即得 10 元，但承担本航程全部修船赔偿',
   ]) {
     const row = el('div', 'earnings__row');

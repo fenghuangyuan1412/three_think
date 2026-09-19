@@ -13,7 +13,7 @@
  * - 领航员：「他可以将一艘平底船向前或向后移动一格」（小）、
  *   「将其中一艘平底船移动两格或是将两艘平底船各移动一格」（大）
  */
-import { LANE_LAST_SPACE, SHIPYARD_SLOTS, getWareLoad } from '../config/board-layout';
+import { LANE_LAST_SPACE, SHIPYARD_SLOTS } from '../config/board-layout';
 import type { Rng } from './rng';
 import type { PlayerId } from './types';
 import {
@@ -132,12 +132,10 @@ export function hasPirate(placements: readonly Placement[]): boolean {
 }
 
 /**
- * 海盗登船：把海盗从海盗船移到该船的货仓空位。
+ * 海盗登船：海盗从海盗船跳到该船的海盗甲板。
  *
- * 规则：「如果平底船上没有空格，海盗无法登船。海盗船长…可以先登船。
- * 在船长登船（或选择不登船）之后，第二位海盗可以登船。」
- *
- * 简化：自动登船（船长优先），有位置就上。见 docs/game-flow.md §5.2。
+ * 本作规则（房主定案）：海盗只上船、不占货仓格，也不把原来在船上的小弟踢下去；
+ * 甲板是海盗的专属区，多名海盗在甲板上互相共享。货仓满不满与登船无关。
  */
 export function boardPirates(
   boats: readonly BoatState[],
@@ -145,44 +143,30 @@ export function boardPirates(
   boatIndex: number,
 ): { boats: BoatState[]; placements: Placement[]; notes: string[] } {
   const notes: string[] = [];
-  const nextBoats = boats.map((b) => ({ ...b }));
+  const boat = boats[boatIndex];
   const nextPlacements = placements.map((p) => ({ ...p }));
-
-  const boat = nextBoats[boatIndex];
-  if (!boat || boat.good === null) return { boats: nextBoats, placements: nextPlacements, notes };
-
-  const load = getWareLoad(boat.good);
-  const taken = new Set(
-    nextPlacements
-      .filter((p) => p.spot.kind === 'hold' && p.spot.boat === boatIndex)
-      .map((p) => (p.spot.kind === 'hold' ? p.spot.space : -1)),
-  );
+  if (!boat || boat.good === null) {
+    return { boats: boats.map((b) => ({ ...b })), placements: nextPlacements, notes };
+  }
 
   for (const pirate of piratesInOrder(nextPlacements)) {
-    let free = -1;
-    for (let i = 0; i < load.spaces.length; i += 1) {
-      if (!taken.has(i)) {
-        free = i;
-        break;
-      }
-    }
-    if (free < 0) {
-      notes.push('货仓已满，海盗无法登船。');
-      break;
-    }
-    taken.add(free);
     const idx = nextPlacements.findIndex(
       (p) => p.playerId === pirate.playerId && p.spot.kind === 'pirate',
     );
     if (idx < 0) continue;
-    const spot: SpotRef = { kind: 'hold', boat: boatIndex, space: free };
-    nextPlacements[idx] = { ...pirate, spot, fromPirate: true };
-    notes.push(
-      `海盗 ${pirate.playerId} 登上第 ${boat.lane + 1} 航道的船（货仓第 ${free + 1} 格）。`,
-    );
+    nextPlacements[idx] = {
+      ...pirate,
+      spot: {
+        kind: 'deck',
+        boat: boatIndex,
+        space: pirate.spot.kind === 'pirate' ? pirate.spot.space : 0,
+      },
+      fromPirate: true,
+    };
+    notes.push(`海盗 ${pirate.playerId} 跳上第 ${boat.lane + 1} 航道的船（海盗甲板）。`);
   }
 
-  return { boats: nextBoats, placements: nextPlacements, notes };
+  return { boats: boats.map((b) => ({ ...b })), placements: nextPlacements, notes };
 }
 
 /**

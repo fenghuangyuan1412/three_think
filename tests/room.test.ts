@@ -232,6 +232,43 @@ describe('谈判阶段并发门禁', () => {
   });
 });
 
+describe('利润分配并发确认门禁', () => {
+  function toPayout() {
+    const { room, seatAccount } = toNegotiation();
+    for (let guard = 0; guard < 20; guard += 1) {
+      const st = room.snapshot().state!;
+      if (st.phase === 'payout') return { room, seatAccount, st };
+      if (st.phase !== 'negotiation') throw new Error(`未预期阶段 ${st.phase}`);
+      const p = st.players.find((x) => !st.negotiationConfirmed.includes(x.id))!;
+      const out = room.applyIntentFrom(seatAccount(p.id), { type: 'negotiation-done', playerId: p.id });
+      if (!out.ok) throw new Error(`确认失败：${out.code} ${out.message}`);
+    }
+    throw new Error('没能到达利润分配');
+  }
+
+  it('payout 没有「轮到谁」：每个座位都能为自己确认；「继续」被拒', () => {
+    const { room, seatAccount, st } = toPayout();
+    expect(room.applyIntentFrom('a1', { type: 'advance' }).ok).toBe(false);
+
+    const others = st.players.slice(0, -1);
+    for (const p of others) {
+      expect(room.applyIntentFrom(seatAccount(p.id), { type: 'payout-viewed', playerId: p.id }).ok).toBe(true);
+      expect(room.snapshot().state!.phase).toBe('payout');
+    }
+    const last = st.players.at(-1)!;
+    expect(room.applyIntentFrom(seatAccount(last.id), { type: 'payout-viewed', playerId: last.id }).ok).toBe(true);
+    expect(room.snapshot().state!.phase).toBe('price-rise');
+  });
+
+  it('替别人点「我看完了」被拒（seat-mismatch）', () => {
+    const { room, seatAccount, st } = toPayout();
+    const [a, b] = st.players;
+    const out = room.applyIntentFrom(seatAccount(a!.id), { type: 'payout-viewed', playerId: b!.id });
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.code).toBe('seat-mismatch');
+  });
+});
+
 describe('股份私有广播（snapshotFor）', () => {
   it('对局中：自己股份全可见，他人只留张数；raw snapshot 不过滤', () => {
     const room = roomWithLoggedIn(3);
