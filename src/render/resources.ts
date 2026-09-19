@@ -39,6 +39,12 @@ export class ResourceBag {
     return m;
   }
 
+  /** 贴图与材质同栈回收（都只需要 dispose） */
+  tex<T extends { dispose(): void }>(t: T): T {
+    this.materials.push(t);
+    return t;
+  }
+
   dispose(): void {
     for (const g of this.geometries) g.dispose();
     for (const m of this.materials) m.dispose();

@@ -1,12 +1,13 @@
 /**
  * 平底船（banca）的程序化模型。
  *
- * 第一版不使用外部模型资源，船体由基础几何体拼成：
- * 船身 + 船首三角 + 桅杆 + 帆 + 船舷描边。
+ * 船体由基础几何体拼成：船身 + 船首三角 + 桅杆 + 帆 + 船舷描边。
+ * 几何不依赖外部模型资源；v1.3 起船身/甲板贴 HD 材质皮肤（render/skins.ts）。
  */
 import * as THREE from 'three';
 import { PALETTE, standardMaterial } from './palette';
 import { ResourceBag } from './resources';
+import { skinTexture } from './skins';
 
 export interface BoatHandle {
   readonly group: THREE.Group;
@@ -21,9 +22,16 @@ export function createBoat(): BoatHandle {
   const bag = new ResourceBag();
   const track = bag.geo.bind(bag);
   const trackMat = bag.mat.bind(bag);
+  const trackTex = bag.tex.bind(bag);
 
-  const hullMat = trackMat(standardMaterial(PALETTE.hull, { roughness: 0.86 }));
-  const deckMat = trackMat(standardMaterial(PALETTE.deck, { roughness: 0.8 }));
+  const hullMat = trackMat(standardMaterial(0xffffff, {
+    map: trackTex(skinTexture('hullOak', 2, 1)),
+    roughness: 0.86,
+  }));
+  const deckMat = trackMat(standardMaterial(0xffffff, {
+    map: trackTex(skinTexture('deckTeak', 1, 1)),
+    roughness: 0.8,
+  }));
   const trimMat = trackMat(standardMaterial(PALETTE.gold, { roughness: 0.35, metalness: 0.6 }));
   const mastMat = trackMat(standardMaterial(PALETTE.mast, { roughness: 0.9 }));
   const sailMat = trackMat(

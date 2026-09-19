@@ -18,6 +18,7 @@ import { createBoard } from './render/board';
 import { installDevHook } from './render/dev-hook';
 import { createDice } from './render/dice';
 import { disposeLabelTextures } from './render/labels';
+import { disposeSkins } from './render/skins';
 import { createScene } from './render/scene';
 import { skew } from './render/coords';
 import { goodHexCss } from './render/resources';
@@ -353,6 +354,7 @@ export function bootApp(root: HTMLElement): void {
       dice.dispose();
       board.dispose();
       disposeLabelTextures();
+      disposeSkins();
       scene.dispose();
     },
     { once: true },

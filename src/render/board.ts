@@ -61,6 +61,7 @@ import { createBillboardLabel, createFlatLabel } from './labels';
 import { PALETTE, goldMaterial, standardMaterial } from './palette';
 import { createLaneStripTexture, createPriceTrackTexture } from './textures';
 import { ResourceBag, goodHex } from './resources';
+import { skinTexture } from './skins';
 
 /** 船的缩放：船体原长在 1.6 世界单位左右，缩到略大于一个航道格 */
 export const BOAT_SCALE = 0.85;
@@ -95,6 +96,7 @@ export function createBoard(): BoardView {
   const bag = new ResourceBag();
   const geo = bag.geo.bind(bag);
   const mat = bag.mat.bind(bag);
+  const bagTex = bag.tex.bind(bag);
   /** 挂一个平贴标签（自动记录几何体与材质以便释放） */
   const flatLabel = (
     parent: THREE.Object3D,
@@ -148,14 +150,22 @@ export function createBoard(): BoardView {
 
   const table = new THREE.Mesh(
     geo(new THREE.BoxGeometry(BOARD_SIZE.width + 9, 0.6, BOARD_SIZE.depth + 9)),
-    mat(standardMaterial(PALETTE.waterDeep, { roughness: 0.92, metalness: 0.05 })),
+    mat(standardMaterial(0xffffff, {
+      map: bagTex(skinTexture('parchment', 3, 3)),
+      roughness: 0.92,
+      metalness: 0.02,
+    })),
   );
   table.position.set(BOARD_CENTER.x, -0.46, BOARD_CENTER.z);
   group.add(table);
 
   const frame = new THREE.Mesh(
     geo(new THREE.BoxGeometry(BOARD_SIZE.width + 1.6, 0.32, BOARD_SIZE.depth + 1.6)),
-    mat(standardMaterial(PALETTE.frame, { roughness: 0.82, metalness: 0.12 })),
+    mat(standardMaterial(0xffffff, {
+      map: bagTex(skinTexture('hullOak', 7, 1)),
+      roughness: 0.82,
+      metalness: 0.08,
+    })),
   );
   frame.position.set(BOARD_CENTER.x, -0.15, BOARD_CENTER.z);
   frame.receiveShadow = true;
@@ -163,7 +173,12 @@ export function createBoard(): BoardView {
 
   const water = new THREE.Mesh(
     geo(new THREE.PlaneGeometry(BOARD_SIZE.width, BOARD_SIZE.depth)),
-    mat(new THREE.MeshStandardMaterial({ color: PALETTE.water, roughness: 0.36, metalness: 0.32 })),
+    mat(new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      map: bagTex(skinTexture('waterTeal', 5, 6)),
+      roughness: 0.36,
+      metalness: 0.32,
+    })),
   );
   water.rotation.x = -Math.PI / 2;
   water.position.set(BOARD_CENTER.x, 0, BOARD_CENTER.z);
@@ -220,7 +235,10 @@ export function createBoard(): BoardView {
 
   const slotGeometry = geo(new THREE.CylinderGeometry(0.3, 0.3, 0.05, 28));
   const smallSlotGeometry = geo(new THREE.CylinderGeometry(0.26, 0.26, 0.05, 24));
-  const dockMaterial = mat(standardMaterial(PALETTE.dock, { roughness: 0.84 }));
+  const dockMaterial = mat(standardMaterial(0xffffff, {
+    map: bagTex(skinTexture('dockPine', 3, 2)),
+    roughness: 0.84,
+  }));
   const dockSlotMaterial = mat(standardMaterial(PALETTE.hull, { roughness: 0.7 }));
   const yardSlotMaterial = mat(standardMaterial(PALETTE.hull, { roughness: 0.74 }));
 
