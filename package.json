@@ -1,7 +1,7 @@
 {
   "name": "three-think",
   "private": true,
-  "version": "1.1.2",
+  "version": "1.2.1",
   "type": "module",
   "description": "融合多种桌游玩法的 3D 桌游。第一版：马尼拉式竞标。",
   "scripts": {

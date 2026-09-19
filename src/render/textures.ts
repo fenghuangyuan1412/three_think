@@ -18,7 +18,7 @@ function makeTexture(width: number, height: number, draw: (ctx: CanvasRenderingC
   draw(ctx);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = 4;
+  texture.anisotropy = 8;
   texture.needsUpdate = true;
   return texture;
 }
@@ -40,11 +40,11 @@ export function createLaneStripTexture(spaceCount: number): THREE.CanvasTexture 
       ctx.fillRect(0, y, cellW, cellH);
 
       ctx.strokeStyle = CSS.laneLine;
-      ctx.lineWidth = 6;
-      ctx.strokeRect(3, y + 3, cellW - 6, cellH - 6);
+      ctx.lineWidth = 12;
+      ctx.strokeRect(6, y + 6, cellW - 12, cellH - 12);
 
       ctx.fillStyle = CSS.ink;
-      ctx.font = '600 54px "Noto Sans SC","Microsoft YaHei",system-ui,sans-serif';
+      ctx.font = '700 108px "Noto Sans SC","Microsoft YaHei",system-ui,sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(String(space), cellW / 2, y + cellH / 2);
@@ -69,9 +69,9 @@ export function createPriceTrackTexture(
 
     // 表头
     ctx.fillStyle = CSS.gold;
-    ctx.font = '600 42px "Noto Sans SC","Microsoft YaHei",system-ui,sans-serif';
+    ctx.font = '700 84px "Noto Sans SC","Microsoft YaHei",system-ui,sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText('黑市价格', 18, headerH / 2);
+    ctx.fillText('黑市价格', 36, headerH / 2);
 
     // 每种货物一行：货物名 + 各档价格
     goods.forEach((good, row) => {
@@ -81,18 +81,18 @@ export function createPriceTrackTexture(
       ctx.fillRect(0, y, width, cellH);
 
       ctx.fillStyle = CSS.cream;
-      ctx.font = '600 40px "Noto Sans SC","Microsoft YaHei",system-ui,sans-serif';
+      ctx.font = '700 80px "Noto Sans SC","Microsoft YaHei",system-ui,sans-serif';
       ctx.textAlign = 'left';
-      ctx.fillText(good.name, 20, y + cellH / 2);
+      ctx.fillText(good.name, 40, y + cellH / 2);
 
       prices.forEach((price, col) => {
         const x = rowLabelW + col * cellW;
         ctx.strokeStyle = '#28414d';
-        ctx.lineWidth = 3;
-        ctx.strokeRect(x + 2, y + 2, cellW - 4, cellH - 4);
+        ctx.lineWidth = 6;
+        ctx.strokeRect(x + 4, y + 4, cellW - 8, cellH - 8);
 
-        ctx.fillStyle = price >= 30 ? CSS.gold : '#9fb6bf';
-        ctx.font = '500 40px "Noto Sans SC","Microsoft YaHei",system-ui,sans-serif';
+        ctx.fillStyle = price >= 30 ? CSS.gold : '#b4cad2';
+        ctx.font = '600 80px "Noto Sans SC","Microsoft YaHei",system-ui,sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(String(price), x + cellW / 2, y + cellH / 2);
       });

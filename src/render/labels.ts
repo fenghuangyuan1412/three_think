@@ -23,7 +23,9 @@ export interface LabelOptions {
 type Resolved = Required<LabelOptions>;
 
 const DEFAULTS: Resolved = {
-  fontSize: 64,
+  // 字号只决定贴图分辨率（世界尺寸由 worldHeight 定）。64px 中文在斜视角下会被
+  // 缩采样糊掉，实测看不清，整体提到 112px 做超采样。
+  fontSize: 112,
   color: '#f2ead9',
   background: 'transparent',
   bold: false,
@@ -33,6 +35,17 @@ const DEFAULTS: Resolved = {
 
 const FONT_STACK =
   '"Noto Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif';
+
+/** '#rrggbb'/'#rgb' → 相对亮度（0~1）；解析不了当作浅色字处理 */
+function colorLuminance(css: string): number {
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(css.trim())?.[1];
+  if (!hex) return 1;
+  const full = hex.length === 3 ? hex.replace(/./g, (c) => c + c) : hex;
+  const r = parseInt(full.slice(0, 2), 16) / 255;
+  const g = parseInt(full.slice(2, 4), 16) / 255;
+  const b = parseInt(full.slice(4, 6), 16) / 255;
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
 
 const textureCache = new Map<string, THREE.CanvasTexture>();
 
@@ -92,17 +105,31 @@ export function createTextTexture(text: string, options: LabelOptions = {}): THR
   }
 
   ctx.font = font;
-  ctx.fillStyle = o.color;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
+  // 无底色的字漂在木纹/水面上，缩采样后最先糊：给字描一圈反差光晕。
+  // 深字配浅晕、浅字配深晕，任何台面都拉得开对比。
+  const halo = !hasBackground && colorLuminance(o.color) < 0.5
+    ? 'rgba(245, 239, 221, 0.8)'
+    : 'rgba(6, 14, 20, 0.75)';
   const blockHeight = lineHeight * lines.length;
   lines.forEach((line, i) => {
     const y = (height - blockHeight) / 2 + lineHeight * (i + 0.5);
+    if (!hasBackground) {
+      ctx.strokeStyle = halo;
+      ctx.lineJoin = 'round';
+      ctx.miterLimit = 2;
+      ctx.lineWidth = o.fontSize * 0.12;
+      ctx.strokeText(line, width / 2, y);
+    }
+    ctx.fillStyle = o.color;
     ctx.fillText(line, width / 2, y);
   });
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
+  // 标签平贴在斜切台面上，斜视角是各向异性缩采样，不开这个必糊
+  texture.anisotropy = 8;
   texture.needsUpdate = true;
   textureCache.set(key, texture);
   return texture;
