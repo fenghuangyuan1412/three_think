@@ -41,6 +41,8 @@ export interface Room {
   reset(byAccount: string): RoomOutcome;
   hostAccount(): string | null;
   snapshot(): RoomSnapshot;
+  /** 按观看者过滤的快照：对局中其他玩家的股份类型保密（只留张数），局终全公开 */
+  snapshotFor(viewerAccount: string | null): RoomSnapshot;
 }
 
 export function createRoom(accounts: readonly AccountEntry[]): Room {
@@ -171,6 +173,27 @@ export function createRoom(accounts: readonly AccountEntry[]): Room {
         hostAccount: host,
         state,
       };
+    },
+    snapshotFor(viewerAccount: string | null): RoomSnapshot {
+      const base = this.snapshot();
+      const seat = viewerAccount ? seatOf(viewerAccount) : null;
+      if (!base.state || !seat || base.roomPhase !== 'playing') return base;
+      const masked: GameState = {
+        ...base.state,
+        players: base.state.players.map((p) =>
+          p.id === seat
+            ? p
+            : {
+                ...p,
+                shares: [],
+                hiddenShares: {
+                  count: p.shares.length,
+                  mortgaged: p.shares.filter((s) => s.mortgaged).length,
+                },
+              },
+        ),
+      };
+      return { ...base, state: masked };
     },
   };
 }

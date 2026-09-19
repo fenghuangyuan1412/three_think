@@ -1,5 +1,7 @@
 /**
- * 侧栏外壳：航程标题 + 当前阶段区块 + 玩家状态 + 对局记录 + 规则速查。
+ * 侧栏外壳：航程标题 + 当前阶段区块 + 玩家状态 + 对局记录。
+ *
+ * 规则说明不在这里 —— 收在棋盘底部的「规则说明书」按钮里（ui/rulebook.ts）。
  *
  * 属于 ui/ 层（agent.md §3）：不做规则判定，只负责把 core 的状态显示出来，
  * 并把玩家操作翻译成 Intent 交给 app.ts。
@@ -46,19 +48,6 @@ export function createGamePanel(options: GamePanelOptions): GamePanelHandle {
       <h3 class="section-title">对局记录</h3>
       <ol class="log-list" data-role="log"></ol>
     </section>
-    <details class="rules">
-      <summary>本航程流程</summary>
-      <ol>
-        <li>竞标港务长办事处</li>
-        <li>港务长买 1 张股份（可选）</li>
-        <li>港务长选 3 种货装船</li>
-        <li>港务长把船放进 0-5，三船之和须为 9</li>
-        <li>放置小弟 ⇄ 掷骰推船，交替进行（含海盗、领航员）</li>
-        <li>利润分配与保险理赔</li>
-        <li>抵达港口的货物涨价 → 下一段航程</li>
-      </ol>
-      <p class="rules__note">任一货物价格达到 30 元时游戏结束，现金 + 股份 − 抵押欠款最高者胜。</p>
-    </details>
   `;
 
   const q = <T extends HTMLElement>(role: string): T => {
@@ -116,7 +105,7 @@ export function createGamePanel(options: GamePanelOptions): GamePanelHandle {
 
     const shares = document.createElement('div');
     shares.className = 'shares';
-    if (player.shares.length === 0) {
+    if (player.shares.length === 0 && !player.hiddenShares) {
       shares.appendChild(tag('无股份', 'tag--muted'));
     } else {
       for (const share of player.shares) {
@@ -128,12 +117,21 @@ export function createGamePanel(options: GamePanelOptions): GamePanelHandle {
           ),
         );
       }
+      if (player.hiddenShares) {
+        const h = player.hiddenShares;
+        shares.appendChild(
+          tag(`股份 ×${h.count}${h.mortgaged ? `（含抵押 ${h.mortgaged}）` : ''}· 种类保密`, 'tag--muted'),
+        );
+      }
     }
     li.appendChild(shares);
 
     const credit = document.createElement('p');
     credit.className = 'player__credit';
-    credit.textContent = `出价上限 ${creditLimit(player)} 元 · 放置小弟 ${placed}/${player.accomplicesTotal}`;
+    // 他人股份被服务端隐藏时，出价上限按 hiddenShares 的张数推算（公式同 creditLimit：未抵押 ×12）
+    const hidden = player.hiddenShares;
+    const limit = hidden ? player.cash + (hidden.count - hidden.mortgaged) * 12 : creditLimit(player);
+    credit.textContent = `出价上限 ${limit} 元 · 放置小弟 ${placed}/${player.accomplicesTotal}`;
     li.appendChild(credit);
 
     return li;

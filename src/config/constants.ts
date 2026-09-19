@@ -30,11 +30,11 @@ export const GAME_END_PRICE = 30;
 export const STARTING_SHARES = 2;
 
 /**
- * 每位玩家的小弟数。规则：三人局每人 4 个，四/五人局每人 3 个。
- * 「每位玩家得到他所代表的颜色的三个同伙。(如果只有三位玩家进行游戏，每位玩家得到四个同伙。)」
+ * 每位玩家的小弟数。本作规则：任何人数局每人都是 3 个，
+ * 与每段航程的 3 轮放置严格对齐，第 3 次移动后必进结算。
  */
 export const ACCOMPLICES_BY_PLAYER_COUNT: Readonly<Record<number, number>> = {
-  3: 4,
+  3: 3,
   4: 3,
   5: 3,
 };

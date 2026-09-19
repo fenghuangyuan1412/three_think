@@ -523,7 +523,7 @@ function handleBuyShare(state: GameState, intent: Intent): IntentOutcome {
     sharePool: pool,
     log: [
       ...state.log,
-      `港务长 ${player.name} 以 ${cost} 元买入 1 张「${goodLabel(intent.good)}」股份。`,
+      `港务长 ${player.name} 以 ${cost} 元买入 1 张股份（种类保密）。`,
     ],
   };
   if (paid.note) next = withLog(next, [paid.note]);

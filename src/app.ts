@@ -16,12 +16,15 @@ import type { RoomSnapshot } from './net/protocol';
 import { createAccomplices } from './render/accomplices';
 import { createBoard } from './render/board';
 import { installDevHook } from './render/dev-hook';
+import { createDice } from './render/dice';
 import { disposeLabelTextures } from './render/labels';
 import { createScene } from './render/scene';
+import { skew } from './render/coords';
 import { createGamePanel, type GamePanelHandle } from './ui/game-panel';
 import { createHud } from './ui/hud';
 import { createKeepAwake } from './ui/keep-awake';
 import { createLobby, type LobbyHandle } from './ui/lobby';
+import { createRulebook } from './ui/rulebook';
 import { createStartScreen, type OnlineCredentials, type StartScreenHandle } from './ui/start-screen';
 
 export function bootApp(root: HTMLElement): void {
@@ -38,8 +41,14 @@ export function bootApp(root: HTMLElement): void {
   const accomplices = createAccomplices();
   scene.scene.add(accomplices.group);
 
-  // 船只移动补间
-  scene.onFrame((delta) => board.update(delta));
+  // 船只移动补间 + 骰子抛掷演出
+  const dice = createDice((good) => GOODS.find((g) => g.id === good)?.color ?? 'brown');
+  scene.scene.add(dice.group);
+  const diceCenter = skew({ x: 0, z: -6.8 });
+  scene.onFrame((delta) => {
+    board.update(delta);
+    dice.update(delta);
+  });
 
   // 仅开发环境：暴露取景检测，供浏览器验证脚本断言棋盘未被截断
   if (import.meta.env.DEV) {
@@ -50,7 +59,12 @@ export function bootApp(root: HTMLElement): void {
   root.appendChild(hud.element);
   scene.onStats((stats) => hud.update(stats));
 
+  // 规则说明书：棋盘底部的常驻按钮（板面不放玩法说明）
+  const rulebook = createRulebook();
+  root.appendChild(rulebook.element);
+
   /** 把 core 的状态同步到画面 */
+  let lastDiceKey: string | null = null;
   function syncView(next: GameState, immediate = false): void {
     board.syncBoats(next.boats, immediate);
 
@@ -60,6 +74,11 @@ export function bootApp(root: HTMLElement): void {
     GOODS.forEach((good, index) => {
       board.setPriceIndex(index, next.priceIndex[good.id] ?? 0);
     });
+
+    // 骰子演出：state.dice 变了才抛一次；开局/重连的 immediate 同步只记不播
+    const diceKey = next.dice ? next.dice.map((d) => `${d.good}:${d.pips}`).join('|') : null;
+    if (next.dice && diceKey !== lastDiceKey && !immediate) dice.throw(next.dice, diceCenter);
+    lastDiceKey = diceKey;
   }
 
   // ---------------------------------------------------------------- 开始屏
@@ -288,6 +307,7 @@ export function bootApp(root: HTMLElement): void {
     'beforeunload',
     () => {
       accomplices.dispose();
+      dice.dispose();
       board.dispose();
       disposeLabelTextures();
       scene.dispose();

@@ -6,17 +6,25 @@
  * 本文件是纯数字计算（不 import three.js），因此可以直接被测试。
  * 棋盘铺在 XZ 平面上，Y 轴向上；-Z 指向马尼拉港。
  *
- * 布局（俯视）：
+ * 布局（俯视）—— 参考实体棋盘的实拍图，**水道区整体斜切**：航道与港口
+ * 沿斜向展开，长条贴图与几何体统一绕 Y 轴旋转 `LANE_SKEW`（见 skew()）。
  * ```
- *            ┌──── 马尼拉港 A B C ────┐        ← 港口在航道正前方
- *   海盗船 ●  │  ║航道1║航道2║航道3║  │  ┌ 修船场 ┐
- *            │  ║ 0-13 ║ … ║ … ║  │  │ A B C  │   ← 修船场在右侧
- *   领航员岛  │  ║      ║    ║    │  └────────┘
- *   保险处    │  ║      ║    ║    │  ┌ 黑市价格 ┐
- *            └────────────────────┘  └──────────┘
+ *                马尼拉港 ╲(斜)      ┌ 修船场 ┐┌保险处┐
+ *   海盗船 ● ──线── 第13格 ╲╱航道 ╲╱ ╲ │ A B C  ││      │
+ *                领航员岛          ╲  ╲        └──────┘└──────┘
+ *                起点区 ─ ─  ─ ─ ─  ─ ─ ┘   ╲╱
+ *                                            ┌ 黑市价格（右下横条）┐
+ *                                            └────────────────────┘
  * ```
  */
-import { LANE_COUNT, LANE_SPACES, PORT_SLOTS, PRICE_TRACK, SHIPYARD_SLOTS } from '../config/board-layout';
+import {
+  GOODS,
+  LANE_COUNT,
+  LANE_SPACES,
+  PORT_SLOTS,
+  PRICE_TRACK,
+  SHIPYARD_SLOTS,
+} from '../config/board-layout';
 
 /** 相邻航道的间距 */
 export const LANE_GAP = 3.4;
@@ -36,17 +44,12 @@ export const SHIPYARD_Z0 = -12.4;
 /** 修船场相邻两格的间距 */
 export const SHIPYARD_PITCH = 1.7;
 
-/** 左侧功能区（海盗 / 领航员 / 保险）的 X 坐标 */
-export const SIDE_COLUMN_X = -6.4;
+/** 保险处：挪到修船场旁边（右侧一列的更右边） */
+export const INSURANCE_X = SHIPYARD_X + 2.6;
+export const INSURANCE_Z = SHIPYARD_Z0 + 1.9;
 
-/** 黑市价格轨第 0 档的中心 X */
-export const PRICE_TRACK_X = 5.4;
-
-/** 价格轨每一档的间距 */
-export const PRICE_STEP_PITCH = 0.78;
-
-/** 价格轨第 0 行（第一种货）的中心 Z */
-export const PRICE_TRACK_Z0 = -6.5;
+/** 黑市价格条：横卧棋盘**右下角**（修船场/保险处那一列的正下方），中心点 */
+export const PRICE_STRIP_CENTER: FlatPoint = { x: 7.6, z: 3.4 };
 
 /**
  * 画布贴图的像素尺寸。
@@ -64,63 +67,130 @@ export const LANE_STRIP_SCALE = SPACE_PITCH / LANE_STRIP_PX.cellH;
 export const LANE_STRIP_WORLD_WIDTH = LANE_STRIP_PX.cellW * LANE_STRIP_SCALE;
 
 /** 世界单位 / 画布像素：由「价格轨一档 = PRICE_STEP_PITCH」反推 */
+export const PRICE_STEP_PITCH = 0.78;
 export const PRICE_TRACK_SCALE = PRICE_STEP_PITCH / PRICE_TRACK_PX.cellW;
 
 /** 价格轨每一行（每种货物）的间距，必须与贴图行高一致 */
 export const PRICE_ROW_PITCH = PRICE_TRACK_PX.cellH * PRICE_TRACK_SCALE;
+
+/** 价格条在世界中的外形尺寸（贴图与几何体共用） */
+export const PRICE_STRIP_SIZE = {
+  width: (PRICE_TRACK_PX.rowLabelW + PRICE_TRACK_PX.cellW * PRICE_TRACK.length) * PRICE_TRACK_SCALE,
+  depth: (PRICE_TRACK_PX.headerH + PRICE_TRACK_PX.cellH * GOODS.length) * PRICE_TRACK_SCALE,
+} as const;
+
+/** 价格条左缘（贴图行名列从这里开始） */
+export const PRICE_STRIP_LEFT = PRICE_STRIP_CENTER.x - PRICE_STRIP_SIZE.width / 2;
+
+/** 黑市价格轨第 0 档的中心 X：跳过行名列后落第一格 */
+export const PRICE_TRACK_X =
+  PRICE_STRIP_LEFT + PRICE_TRACK_PX.rowLabelW * PRICE_TRACK_SCALE + PRICE_STEP_PITCH / 2;
+
+/** 价格条远缘（贴图表头朝 -Z 侧，即朝向航道那一侧） */
+export const PRICE_STRIP_TOP_Z = PRICE_STRIP_CENTER.z - PRICE_STRIP_SIZE.depth / 2;
+
+/** 价格轨第 0 行（第一种货）的中心 Z：贴着表头下缘，向 +Z（玩家方向）逐行排开 */
+export const PRICE_TRACK_Z0 =
+  PRICE_STRIP_TOP_Z + PRICE_TRACK_PX.headerH * PRICE_TRACK_SCALE + PRICE_ROW_PITCH / 2;
 
 export interface FlatPoint {
   readonly x: number;
   readonly z: number;
 }
 
-/** 航道中心线的 X 坐标 */
+/**
+ * 水道区斜切角（绕 Y 轴弧度）：远端（港口方向）向左偏，与实拍图一致。
+ * board.ts 里所有长条几何体（航道、码头、起点线）的 rotation.y 都用它，
+ * 保证贴图方向与坐标换算永远同源。
+ */
+export const LANE_SKEW = (15 * Math.PI) / 180;
+
+/** 斜切旋转中心：取航道中段，避免斜完整体大幅偏移 */
+const SKEW_PIVOT: FlatPoint = { x: 0, z: -((LANE_SPACES - 1) * SPACE_PITCH) / 2 };
+
+/** 航道局部坐标 → 斜切后的世界坐标 */
+export function skew(point: FlatPoint): FlatPoint {
+  const dx = point.x - SKEW_PIVOT.x;
+  const dz = point.z - SKEW_PIVOT.z;
+  const c = Math.cos(LANE_SKEW);
+  const s = Math.sin(LANE_SKEW);
+  return {
+    x: SKEW_PIVOT.x + dx * c + dz * s,
+    z: SKEW_PIVOT.z - dx * s + dz * c,
+  };
+}
+
+/** 在已斜切的点上追加一个随水道方向旋转的小偏移（如「格心再朝港口 0.38」） */
+export function skewOffset(base: FlatPoint, dx: number, dz: number): FlatPoint {
+  const c = Math.cos(LANE_SKEW);
+  const s = Math.sin(LANE_SKEW);
+  return { x: base.x + dx * c + dz * s, z: base.z - dx * s + dz * c };
+}
+
+/** 航道中心线的 X 坐标（航道局部系，未经斜切；要世界坐标请用 laneSpacePosition） */
 export function laneX(lane: number): number {
   return (lane - (LANE_COUNT - 1) / 2) * LANE_GAP;
 }
 
-/** 航道内第 space 格的世界坐标 */
+/** 航道内第 space 格的世界坐标（已斜切） */
 export function laneSpacePosition(lane: number, space: number): FlatPoint {
-  return { x: laneX(lane), z: -space * SPACE_PITCH };
+  return skew({ x: laneX(lane), z: -space * SPACE_PITCH });
 }
 
-/** 港口空格 A/B/C 的世界坐标（横跨三条航道，按抵达顺序使用） */
+/** 港口空格 A/B/C 的世界坐标（横跨三条航道，按抵达顺序使用；已斜切） */
 export function portSlotPosition(index: number): FlatPoint {
-  return { x: laneX(index), z: PORT_ROW_Z };
+  return skew({ x: laneX(index), z: PORT_ROW_Z });
 }
 
-/** 修船场空格 A/B/C 的世界坐标（右侧一列，A 在最远，B、C 依次靠近） */
+/** 修船场空格 A/B/C 的世界坐标（右侧一列，A 在最远，B、C 依次靠近；不随水道斜切） */
 export function shipyardSlotPosition(index: number): FlatPoint {
   return { x: SHIPYARD_X, z: SHIPYARD_Z0 + index * SHIPYARD_PITCH };
 }
 
-/** 黑市价格轨上第 goodIndex 种货物、第 step 档的世界坐标 */
+/** 黑市价格条上第 goodIndex 种货物、第 step 档的世界坐标 */
 export function priceCellPosition(goodIndex: number, step: number): FlatPoint {
   return {
     x: PRICE_TRACK_X + step * PRICE_STEP_PITCH,
-    z: PRICE_TRACK_Z0 - goodIndex * PRICE_ROW_PITCH,
+    z: PRICE_TRACK_Z0 + goodIndex * PRICE_ROW_PITCH,
   };
 }
 
 /**
- * 左侧功能区各区块的中心坐标。
- * 海盗船特意放在**第 13 格旁边**（z = -13 × SPACE_PITCH），与实体棋盘一致。
+ * 海盗船与领航员岛的锚点。
+ * 海盗船特意放在**第 13 格旁边**，与实拍图一致；位置从斜切后的航道反推，不写死。
  */
+const pirateAnchor = skew({ x: laneX(0), z: -13 * SPACE_PITCH });
+
 export const SIDE_BLOCKS = {
-  pirate: { x: SIDE_COLUMN_X, z: -13 * SPACE_PITCH },
-  pilot: { x: SIDE_COLUMN_X, z: -6.6 },
-  insurance: { x: SIDE_COLUMN_X, z: -3.0 },
+  pirate: { x: pirateAnchor.x - 2.8, z: pirateAnchor.z + 0.2 },
+  pilot: skew({ x: laneX(0) - 2.7, z: -6.6 }),
+  insurance: { x: INSURANCE_X, z: INSURANCE_Z },
 } as const;
 
-/** 棋盘的包围范围（用于画底板与摆相机） */
+/**
+ * 棋盘的包围范围（用于画底板与摆相机）。
+ * 斜切后不能再用「常数加减」推包围盒，直接取所有关键块的四至。
+ */
+const boundCandidates: FlatPoint[] = [
+  skew({ x: laneX(0) - LANE_STRIP_WORLD_WIDTH / 2 - 0.2, z: 0.6 }),
+  skew({ x: laneX(LANE_COUNT - 1) + LANE_STRIP_WORLD_WIDTH / 2 + 0.2, z: 0.6 }),
+  skew({ x: laneX(0) - 1.3, z: PORT_ROW_Z - 1.5 }),
+  skew({ x: laneX(LANE_COUNT - 1) + 1.3, z: PORT_ROW_Z - 1.5 }),
+  { x: SIDE_BLOCKS.pirate.x - 1.2, z: SIDE_BLOCKS.pirate.z },
+  { x: SIDE_BLOCKS.pilot.x - 1.3, z: SIDE_BLOCKS.pilot.z },
+  { x: SHIPYARD_X + 1.4, z: SHIPYARD_Z0 - 1.3 },
+  { x: SHIPYARD_X + 1.4, z: SHIPYARD_Z0 + 2 * SHIPYARD_PITCH + 1.0 },
+  { x: INSURANCE_X + 1.1, z: INSURANCE_Z },
+  { x: PRICE_STRIP_CENTER.x - PRICE_STRIP_SIZE.width / 2 - 0.3, z: PRICE_STRIP_TOP_Z - 0.2 },
+  { x: PRICE_STRIP_CENTER.x + PRICE_STRIP_SIZE.width / 2 + 0.3, z: PRICE_STRIP_CENTER.z + PRICE_STRIP_SIZE.depth / 2 + 0.2 },
+  { x: 0, z: 0.6 },
+];
+
 export const BOARD_BOUNDS = {
-  minX: SIDE_COLUMN_X - 1.5,
-  maxX: Math.max(
-    SHIPYARD_X + 1.4,
-    PRICE_TRACK_X + (PRICE_TRACK.length - 1) * PRICE_STEP_PITCH + 0.5,
-  ),
-  minZ: PORT_ROW_Z - 1.5,
-  maxZ: 1.9,
+  minX: Math.min(...boundCandidates.map((p) => p.x)),
+  maxX: Math.max(...boundCandidates.map((p) => p.x)),
+  minZ: Math.min(...boundCandidates.map((p) => p.z)),
+  maxZ: Math.max(...boundCandidates.map((p) => p.z)),
 } as const;
 
 export const BOARD_CENTER: FlatPoint = {

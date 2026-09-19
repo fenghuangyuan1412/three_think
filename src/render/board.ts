@@ -4,17 +4,17 @@
  * 第一版不含任何外部美术资源：全部由基础几何体 + Canvas 贴图构成，
  * 因此没有资源许可问题（见 agent.md §8）。
  *
- * 布局（俯视）：
+ * 布局（俯视）—— 水道区整体斜切（coords.LANE_SKEW），参考实体棋盘实拍图：
  * ```
- *           ┌───── 马尼拉港 A B C ─────┐          ← 港口在航道正前方
- *  海盗船 ●  │  ║航道1║航道2║航道3║   │   ┌ 修船场 ┐
- *           │  ║ 0-13 ║ …  ║ …  ║   │   │ A B C  │  ← 修船场在右侧
- *  领航员岛  │  ║      ║    ║    ║   │   └────────┘
- *  保险处    │  ║      ║    ║    ║   │   ┌ 黑市价格 ┐
- *           └──────────────────────┘   └──────────┘
+ *        马尼拉港 ╲(斜)          ┌ 修船场 ┐┌ 保险处 ┐
+ *  海盗船 ▶线─ 第13格    ╲ 斜航道 ╲│ A B C  ││       │
+ *           领航员岛      ╲        └───────┘└───────┘
+ *   起点区 ─ ─ ─ ─ ─ ─┘  ╲╱
+ *                              ┌ 黑市价格（右下横条）┐
+ *                              └────────────────────┘
  * ```
  *
- * 每个可下注的格位都直接印上「得多少 / 付多少」，玩家不必查表。
+ * 板上只留**名称与得/付数字**，所有玩法说明收进底部「说明书」按钮（ui/rulebook.ts）。
  *
  * 性能（agent.md §6）：重复的小字烘成整条贴图，3 条航道共用同一张贴图与材质。
  */
@@ -41,21 +41,21 @@ import {
   BOARD_CENTER,
   BOARD_SIZE,
   LANE_GAP,
+  LANE_SKEW,
   LANE_STRIP_WORLD_WIDTH,
   PORT_ROW_Z,
-  PRICE_ROW_PITCH,
-  PRICE_STEP_PITCH,
-  PRICE_TRACK_PX,
-  PRICE_TRACK_SCALE,
-  PRICE_TRACK_X,
-  PRICE_TRACK_Z0,
+  PRICE_STRIP_CENTER,
+  PRICE_STRIP_SIZE,
   SHIPYARD_X,
   SIDE_BLOCKS,
   SPACE_PITCH,
+  laneSpacePosition,
   laneX,
   portSlotPosition,
   priceCellPosition,
   shipyardSlotPosition,
+  skew,
+  skewOffset,
 } from './coords';
 import { createBillboardLabel, createFlatLabel } from './labels';
 import { PALETTE, goldMaterial, standardMaterial } from './palette';
@@ -142,6 +142,22 @@ export function createBoard(): BoardView {
 
   const inkColor = '#241d13';
 
+  /** 两点之间的细连线（板上表示关联，如海盗船 → 第 13 格） */
+  const linkLine = (
+    from: { x: number; z: number },
+    to: { x: number; z: number },
+    material: THREE.Material,
+  ): THREE.Mesh => {
+    const dx = to.x - from.x;
+    const dz = to.z - from.z;
+    const len = Math.hypot(dx, dz);
+    const line = new THREE.Mesh(geo(new THREE.BoxGeometry(len, 0.03, 0.07)), material);
+    line.position.set((from.x + to.x) / 2, 0.09, (from.z + to.z) / 2);
+    line.rotation.y = Math.atan2(-dz, dx);
+    group.add(line);
+    return line;
+  };
+
   // ---------------------------------------------------------------- 桌面与棋盘外框
 
   const table = new THREE.Mesh(
@@ -183,37 +199,36 @@ export function createBoard(): BoardView {
   const laneCenterZ = -((LANE_SPACES - 1) * SPACE_PITCH) / 2;
 
   for (let lane = 0; lane < LANE_COUNT; lane += 1) {
-    const x = laneX(lane);
+    const center = skew({ x: laneX(lane), z: laneCenterZ });
 
     const base = new THREE.Mesh(laneBaseGeometry, laneBaseMaterial);
-    base.position.set(x, 0.04, laneCenterZ);
+    base.position.set(center.x, 0.04, center.z);
+    base.rotation.y = LANE_SKEW;
     base.receiveShadow = true;
     group.add(base);
 
     const strip = new THREE.Mesh(laneStripGeometry, laneStripMaterial);
     strip.rotation.x = -Math.PI / 2;
-    strip.position.set(x, 0.075, laneCenterZ);
+    strip.rotation.z = LANE_SKEW;
+    strip.position.set(center.x, 0.075, center.z);
     group.add(strip);
-
-    billboard(group, `第 ${lane + 1} 航道`, x, 0.42, 1.05, {
-      worldHeight: 0.34,
-      bold: true,
-      background: 'rgba(10,28,38,0.78)',
-    });
   }
 
   // 起点区提示线（规则：三船起点之和必须是 9）
+  const launchCenter = skew({ x: 0, z: -5.5 * SPACE_PITCH });
   const launchLine = new THREE.Mesh(
     geo(new THREE.BoxGeometry(LANE_GAP * LANE_COUNT, 0.03, 0.05)),
     mat(goldMaterial()),
   );
-  launchLine.position.set(0, 0.085, -5.5 * SPACE_PITCH);
+  launchLine.position.set(launchCenter.x, 0.085, launchCenter.z);
+  launchLine.rotation.y = LANE_SKEW;
   group.add(launchLine);
-  flatLabel(group, '起点区 0–5', -LANE_GAP * 1.5 - 0.85, 0.09, -5.5 * SPACE_PITCH, {
+  const launchLabel = skew({ x: laneX(0) - LANE_GAP / 2 - 1.5, z: -5.5 * SPACE_PITCH });
+  flatLabel(group, '起点区 0–5', launchLabel.x, 0.09, launchLabel.z, {
     worldHeight: 0.38,
     color: '#d9a441',
     bold: true,
-  });
+  }).rotation.z = LANE_SKEW;
 
   // ---------------------------------------------------------------- 通用格位
 
@@ -223,36 +238,38 @@ export function createBoard(): BoardView {
   const dockSlotMaterial = mat(standardMaterial(PALETTE.hull, { roughness: 0.7 }));
   const yardSlotMaterial = mat(standardMaterial(PALETTE.hull, { roughness: 0.74 }));
 
-  // ---------------------------------------------------------------- 港口（航道正前方）
+  // ---------------------------------------------------------------- 港口（斜跨航道尽头）
 
+  const dockCenter = skew({ x: 0, z: PORT_ROW_Z });
   const dock = new THREE.Mesh(
     geo(new THREE.BoxGeometry(LANE_GAP * LANE_COUNT + 2.0, 0.34, 1.7)),
     dockMaterial,
   );
-  dock.position.set(0, 0.17, PORT_ROW_Z);
+  dock.position.set(dockCenter.x, 0.17, dockCenter.z);
+  dock.rotation.y = LANE_SKEW;
   dock.receiveShadow = true;
   dock.castShadow = true;
   group.add(dock);
 
   PORT_SLOTS.forEach((letter, i) => {
     const p = portSlotPosition(i);
-    const disc = new THREE.Mesh(slotGeometry, dockSlotMaterial);
-    disc.position.set(p.x, 0.36, p.z + 0.38);
-    group.add(disc);
+    const disc = skewOffset(p, 0, 0.38);
+    const discMesh = new THREE.Mesh(slotGeometry, dockSlotMaterial);
+    discMesh.position.set(disc.x, 0.36, disc.z);
+    group.add(discMesh);
 
     // 台面是浅木色，深色字才看得清
     const spec = PORT_SPACES[i];
-    flatLabel(
-      group,
-      `${letter}  得${spec?.reward ?? 0} 付${spec?.cost ?? 0}`,
-      p.x,
-      0.38,
-      p.z - 0.42,
-      { worldHeight: 0.44, color: inkColor, bold: true },
-    );
+    const labelPos = skewOffset(p, 0, -0.42);
+    flatLabel(group, `${letter}  得${spec?.reward ?? 0} 付${spec?.cost ?? 0}`, labelPos.x, 0.38, labelPos.z, {
+      worldHeight: 0.44,
+      color: inkColor,
+      bold: true,
+    }).rotation.z = LANE_SKEW;
   });
 
-  billboard(group, '马尼拉港 · 船过第 13 格即抵达', 0, 1.5, PORT_ROW_Z - 0.35, {
+  const portName = skew({ x: 0, z: PORT_ROW_Z - 1.2 });
+  billboard(group, '马尼拉港', portName.x, 1.5, portName.z, {
     worldHeight: 0.46,
     bold: true,
     background: 'rgba(10,28,38,0.85)',
@@ -292,30 +309,61 @@ export function createBoard(): BoardView {
     background: 'rgba(10,28,38,0.85)',
   });
 
-  // ---------------------------------------------------------------- 海盗船（贴着第 13 格）
+  // ---------------------------------------------------------------- 海盗船（贴着第 13 格，船头垂直指向航道）
 
-  const pirateHull = new THREE.Mesh(
-    geo(new THREE.BoxGeometry(1.9, 0.34, 0.9)),
-    mat(standardMaterial(PALETTE.hull, { roughness: 0.9 })),
-  );
-  pirateHull.position.set(SIDE_BLOCKS.pirate.x, 0.17, SIDE_BLOCKS.pirate.z);
-  pirateHull.castShadow = true;
-  group.add(pirateHull);
+  // 复用平底船模型（render/boat.ts）：船头在局部 -Z，
+  // 绕 Y 转 LANE_SKEW - π/2 后恰好指向「垂直航道、朝第 13 格」的方向。
+  const pirateBoat = createBoat();
+  const pirateBow = { x: Math.cos(LANE_SKEW), z: -Math.sin(LANE_SKEW) };
+  pirateBoat.group.position.set(SIDE_BLOCKS.pirate.x, 0.06, SIDE_BLOCKS.pirate.z);
+  pirateBoat.group.rotation.y = LANE_SKEW - Math.PI / 2;
+  pirateBoat.group.scale.setScalar(1.1);
+  group.add(pirateBoat.group);
+
+  /** 海盗席位：0 = 船头位（先登船者为船长，离航道更近），1 = 船尾位 */
+  function pirateSeatPos(space: number): { x: number; z: number } {
+    const k = space === 0 ? 0.5 : -0.5;
+    return {
+      x: SIDE_BLOCKS.pirate.x + pirateBow.x * k,
+      z: SIDE_BLOCKS.pirate.z + pirateBow.z * k,
+    };
+  }
 
   const pirateSeatMaterial = mat(standardMaterial(PALETTE.parchment, { roughness: 0.8 }));
   for (let s = 0; s < PIRATE_SPACES.length; s += 1) {
-    const x = SIDE_BLOCKS.pirate.x + (s === 0 ? -0.46 : 0.46);
+    const p = pirateSeatPos(s);
     const disc = new THREE.Mesh(smallSlotGeometry, pirateSeatMaterial);
-    disc.position.set(x, 0.36, SIDE_BLOCKS.pirate.z);
+    disc.position.set(p.x, 0.34, p.z);
     group.add(disc);
-    flatLabel(group, `付${PIRATE_SPACES[s]?.cost ?? 0}`, x, 0.4, SIDE_BLOCKS.pirate.z, {
+    flatLabel(group, `付${PIRATE_SPACES[s]?.cost ?? 0}`, p.x, 0.4, p.z, {
       worldHeight: 0.28,
       color: inkColor,
       bold: true,
     });
   }
 
-  billboard(group, '海盗船 · 在第 13 格出手', SIDE_BLOCKS.pirate.x, 1.0, SIDE_BLOCKS.pirate.z, {
+  // 「在第 13 格出手」不再用文字说明，改为实体棋盘那样的一根连线：
+  // 从船头沿**垂直航道的垂足**连到航道中心线（指向格心会歪 ~13°，垂足才读得出直角）
+  const space13 = laneSpacePosition(0, LANE_SPACES - 1);
+  const bowTip = {
+    x: SIDE_BLOCKS.pirate.x + pirateBow.x * 1.25,
+    z: SIDE_BLOCKS.pirate.z + pirateBow.z * 1.25,
+  };
+  const laneDir = {
+    x: space13.x - laneSpacePosition(0, 0).x,
+    z: space13.z - laneSpacePosition(0, 0).z,
+  };
+  const laneLen = Math.hypot(laneDir.x, laneDir.z);
+  const laneU = { x: laneDir.x / laneLen, z: laneDir.z / laneLen };
+  const rel = { x: bowTip.x - space13.x, z: bowTip.z - space13.z };
+  const along = rel.x * laneU.x + rel.z * laneU.z;
+  linkLine(
+    bowTip,
+    { x: space13.x + laneU.x * along, z: space13.z + laneU.z * along },
+    pirateSeatMaterial,
+  );
+
+  billboard(group, '海盗船', SIDE_BLOCKS.pirate.x, 1.0, SIDE_BLOCKS.pirate.z, {
     worldHeight: 0.44,
     bold: true,
     background: 'rgba(60,16,16,0.88)',
@@ -347,13 +395,13 @@ export function createBoard(): BoardView {
     });
   }
 
-  billboard(group, '领航员岛 · 无直接收益', SIDE_BLOCKS.pilot.x, 1.0, SIDE_BLOCKS.pilot.z, {
+  billboard(group, '领航员', SIDE_BLOCKS.pilot.x, 1.0, SIDE_BLOCKS.pilot.z, {
     worldHeight: 0.44,
     bold: true,
     background: 'rgba(10,28,38,0.88)',
   });
 
-  // ---------------------------------------------------------------- 保险处
+  // ---------------------------------------------------------------- 保险处（挪到修船场旁边）
 
   const insurance = new THREE.Mesh(
     geo(new THREE.BoxGeometry(1.8, 0.72, 1.0)),
@@ -366,7 +414,7 @@ export function createBoard(): BoardView {
   const insuranceSeat = new THREE.Mesh(smallSlotGeometry, pirateSeatMaterial);
   insuranceSeat.position.set(SIDE_BLOCKS.insurance.x, 0.755, SIDE_BLOCKS.insurance.z);
   group.add(insuranceSeat);
-  flatLabel(group, `立得${INSURANCE_FEE}\n但赔修理费`, SIDE_BLOCKS.insurance.x, 0.84, SIDE_BLOCKS.insurance.z, {
+  flatLabel(group, `得${INSURANCE_FEE}\n赔修理`, SIDE_BLOCKS.insurance.x, 0.84, SIDE_BLOCKS.insurance.z, {
     worldHeight: 0.34,
     color: inkColor,
     bold: true,
@@ -378,19 +426,10 @@ export function createBoard(): BoardView {
     background: 'rgba(10,28,38,0.88)',
   });
 
-  // ---------------------------------------------------------------- 黑市价格轨
-
-  const priceWidth =
-    (PRICE_TRACK_PX.rowLabelW + PRICE_TRACK_PX.cellW * PRICE_TRACK.length) * PRICE_TRACK_SCALE;
-  const priceDepth =
-    (PRICE_TRACK_PX.headerH + PRICE_TRACK_PX.cellH * GOODS.length) * PRICE_TRACK_SCALE;
-  const priceLeft =
-    PRICE_TRACK_X - PRICE_STEP_PITCH / 2 - PRICE_TRACK_PX.rowLabelW * PRICE_TRACK_SCALE;
-  const priceTopZ =
-    PRICE_TRACK_Z0 + PRICE_TRACK_PX.headerH * PRICE_TRACK_SCALE + PRICE_ROW_PITCH / 2;
+  // ---------------------------------------------------------------- 黑市价格条（棋盘底部横条）
 
   const pricePlane = new THREE.Mesh(
-    geo(new THREE.PlaneGeometry(priceWidth, priceDepth)),
+    geo(new THREE.PlaneGeometry(PRICE_STRIP_SIZE.width, PRICE_STRIP_SIZE.depth)),
     mat(
       new THREE.MeshBasicMaterial({
         map: createPriceTrackTexture(GOODS, PRICE_TRACK),
@@ -399,7 +438,7 @@ export function createBoard(): BoardView {
     ),
   );
   pricePlane.rotation.x = -Math.PI / 2;
-  pricePlane.position.set(priceLeft + priceWidth / 2, 0.03, priceTopZ - priceDepth / 2);
+  pricePlane.position.set(PRICE_STRIP_CENTER.x, 0.03, PRICE_STRIP_CENTER.z);
   group.add(pricePlane);
 
   const priceMarkerGeometry = geo(new THREE.BoxGeometry(0.26, 0.1, 0.26));
@@ -459,13 +498,28 @@ export function createBoard(): BoardView {
 
   // ---------------------------------------------------------------- 位置与挂载
 
-  const boatTargets: (THREE.Vector3 | null)[] = boats.map(() => null);
+  /** 时长驱动的船只补间：进港/进厂时加一小段跃起弧线，普通航行平移 */
+  interface BoatAnim {
+    from: THREE.Vector3;
+    to: THREE.Vector3;
+    yawFrom: number;
+    yawTo: number;
+    t: number;
+    dur: number;
+    hop: number;
+  }
+  const boatAnims: (BoatAnim | null)[] = boats.map(() => null);
+
+  /** 船在斜航道 / 斜码头上要顺着水道朝向；进修船场（竖直一列）时归正 */
+  function boatYaw(state: BoatState | undefined): number {
+    return state?.shipyardSlot === null || state?.shipyardSlot === undefined ? LANE_SKEW : 0;
+  }
 
   function boatPositionOf(index: number, boats0: readonly BoatState[]): THREE.Vector3 {
     const state = boats0[index];
     if (state?.arrivedSlot !== null && state?.arrivedSlot !== undefined) {
-      const p = portSlotPosition(state.arrivedSlot);
-      return new THREE.Vector3(p.x, BOAT_Y, p.z + 0.38);
+      const p = skewOffset(portSlotPosition(state.arrivedSlot), 0, 0.38);
+      return new THREE.Vector3(p.x, BOAT_Y, p.z);
     }
     if (state?.shipyardSlot !== null && state?.shipyardSlot !== undefined) {
       const p = shipyardSlotPosition(state.shipyardSlot);
@@ -473,7 +527,8 @@ export function createBoard(): BoardView {
     }
     const lane = state?.lane ?? index;
     const space = Math.min(state?.position ?? 0, LANE_LAST_SPACE);
-    return new THREE.Vector3(laneX(lane), BOAT_Y, -space * SPACE_PITCH);
+    const p = laneSpacePosition(lane, space);
+    return new THREE.Vector3(p.x, BOAT_Y, p.z);
   }
 
   function holdLocalOffset(
@@ -496,12 +551,10 @@ export function createBoard(): BoardView {
         const p = shipyardSlotPosition(spot.slot);
         return new THREE.Vector3(p.x - 0.62, 0.4, p.z);
       }
-      case 'pirate':
-        return new THREE.Vector3(
-          SIDE_BLOCKS.pirate.x + (spot.space === 0 ? -0.46 : 0.46),
-          0.42,
-          SIDE_BLOCKS.pirate.z,
-        );
+      case 'pirate': {
+        const p = pirateSeatPos(spot.space);
+        return new THREE.Vector3(p.x, 0.4, p.z);
+      }
       case 'pilot':
         return new THREE.Vector3(
           SIDE_BLOCKS.pilot.x + (spot.size === 'small' ? -0.44 : 0.44),
@@ -521,18 +574,42 @@ export function createBoard(): BoardView {
     placeBoat(index, lane, space) {
       const boat = boats[index];
       if (!boat) return;
-      boat.group.position.set(laneX(lane), BOAT_Y, -space * SPACE_PITCH);
-      boatTargets[index] = null;
+      const p = laneSpacePosition(lane, space);
+      boat.group.position.set(p.x, BOAT_Y, p.z);
+      boat.group.rotation.y = LANE_SKEW;
+      boatAnims[index] = null;
     },
 
     syncBoats(next, immediate = false) {
       next.forEach((state, index) => {
+        const boatGroup = boats[index]?.group;
+        if (!boatGroup) return;
         const target = boatPositionOf(index, next);
+        const yaw = boatYaw(state);
         if (immediate) {
-          boats[index]?.group.position.copy(target);
-          boatTargets[index] = null;
+          boatGroup.position.copy(target);
+          boatGroup.rotation.y = yaw;
+          boatAnims[index] = null;
         } else {
-          boatTargets[index] = target;
+          const anim = boatAnims[index];
+          const goingSame =
+            anim &&
+            anim.to.distanceToSquared(target) < 1e-4 &&
+            Math.abs(anim.yawTo - yaw) < 1e-4;
+          const arrived =
+            state.arrivedSlot !== null || state.shipyardSlot !== null;
+          if (!goingSame && (target.distanceToSquared(boatGroup.position) > 1e-4 || Math.abs(yaw - boatGroup.rotation.y) > 1e-4)) {
+            boatAnims[index] = {
+              from: boatGroup.position.clone(),
+              to: target.clone(),
+              yawFrom: boatGroup.rotation.y,
+              yawTo: yaw,
+              // 负值 = 等待期：先让骰子落地演出播完，船再起步
+              t: -1.15 / (arrived ? 1.7 : 0.9),
+              dur: arrived ? 1.7 : 0.9,
+              hop: arrived ? 0.24 : 0,
+            };
+          }
         }
 
         // 船上的货仓板块：显示对应货物的那一块
@@ -570,14 +647,24 @@ export function createBoard(): BoardView {
     },
 
     update(deltaSeconds) {
-      const k = Math.min(1, deltaSeconds * 6);
-      boats.forEach((boat, index) => {
-        const target = boatTargets[index];
-        if (!target) return;
-        boat.group.position.lerp(target, k);
-        if (boat.group.position.distanceToSquared(target) < 1e-4) {
-          boat.group.position.copy(target);
-          boatTargets[index] = null;
+      boatAnims.forEach((anim, index) => {
+        if (!anim) return;
+        const boatGroup = boats[index]?.group;
+        if (!boatGroup) {
+          boatAnims[index] = null;
+          return;
+        }
+        anim.t += deltaSeconds / anim.dur;
+        if (anim.t < 0) return;
+        const e = Math.min(1, anim.t);
+        const k = e < 0.5 ? 2 * e * e : 1 - (2 - 2 * e) * (2 - 2 * e) / 2;
+        boatGroup.position.lerpVectors(anim.from, anim.to, k);
+        if (anim.hop > 0) boatGroup.position.y += Math.sin(Math.PI * e) * anim.hop;
+        boatGroup.rotation.y = anim.yawFrom + (anim.yawTo - anim.yawFrom) * k;
+        if (e >= 1) {
+          boatGroup.position.copy(anim.to);
+          boatGroup.rotation.y = anim.yawTo;
+          boatAnims[index] = null;
         }
       });
     },
@@ -591,6 +678,7 @@ export function createBoard(): BoardView {
 
     dispose() {
       for (const boat of boats) boat.dispose();
+      pirateBoat.dispose();
       for (const g of geometries) g.dispose();
       for (const m of materials) m.dispose();
       group.clear();

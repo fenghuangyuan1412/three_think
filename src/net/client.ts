@@ -15,11 +15,11 @@ export interface NetHandlers {
   readonly onReplaced?: () => void;
 }
 
-/** 根据当前页面推导默认服务端地址：公网 https 站走 Funnel 10000，本地 dev 走 8787 */
+/** 服务端与页面同源同端口（Node 进程同时托管 dist 与 WS）；vite dev 端口回落到本机 8787 */
 export function defaultServerUrl(): string {
   if (typeof location === 'undefined') return 'ws://localhost:8787';
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const port = location.protocol === 'https:' ? '10000' : '8787';
+  const port = location.port === '5173' || !location.port ? '8787' : location.port;
   return `${proto}://${location.hostname}:${port}`;
 }
 

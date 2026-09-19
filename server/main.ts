@@ -102,9 +102,9 @@ function sendError(conn: Conn, code: string, message: string): void {
 }
 
 function broadcastSnapshot(): void {
-  const snapshot = room.snapshot();
   for (const conn of conns.values()) {
-    if (conn.account) send(conn, { type: 'snapshot', snapshot });
+    // 按观看者过滤：对局中他人股份类型保密（见 room.snapshotFor）
+    if (conn.account) send(conn, { type: 'snapshot', snapshot: room.snapshotFor(conn.account) });
   }
 }
 

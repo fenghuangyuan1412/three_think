@@ -177,32 +177,13 @@ export interface DiceRoll {
 export type VoyageStep = 'placement' | 'movement' | 'pilot';
 
 /**
- * 一段航程的步骤表。
- *
- * 规则：「这个阶段有三个同伙放置回合，每个同伙放置回合后有一个平底船移动回合…
- * 在三人游戏中，有四个同伙放置回合与三个平底船移动回合：在第一个同伙放置回合之后，
- * 执行第二个同伙放置回合。接着开始第一个平底船移动回合。在此之后，回合的交替顺序
- * 与四位元玩家的游戏相同。」
- *
- * 以及「在最后一个同伙放置回合之后（在最后一个平底船移动回合之前），领航员可以…」
- *
- * 注意：小弟总数与放置回合数是对齐的（3 人局 4 人局各 4/3 个小弟与 4/3 个放置回合），
- * 因此每位玩家每回合放一个，本段航程正好用完。
+ * 一段航程的步骤表。本作规则（房主定案）：任何人数局统一
+ * 「P M P M P [pilot] M」——3 轮放置对应 3 个小弟，第 3 次移动后必进结算。
+ * （官方规则书对 3 人局有"4 小弟 4 放置轮"的变体，本作不采用。）
  */
 export function voyageSchedule(playerCount: number): VoyageStep[] {
-  const placementRounds = playerCount === 3 ? 4 : 3;
-  const steps: VoyageStep[] = [];
-
-  if (placementRounds === 4) {
-    // 3 人局：P P M P M P [pilot] M
-    steps.push('placement', 'placement', 'movement', 'placement', 'movement', 'placement');
-  } else {
-    // 4-5 人局：P M P M P [pilot] M
-    steps.push('placement', 'movement', 'placement', 'movement', 'placement');
-  }
-
-  steps.push('pilot', 'movement');
-  return steps;
+  void playerCount;
+  return ['placement', 'movement', 'placement', 'movement', 'placement', 'pilot', 'movement'];
 }
 
 /** 已经执行过几次移动回合（用于判断海盗是登船还是劫掠） */

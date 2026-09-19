@@ -138,3 +138,26 @@ describe('意图门禁', () => {
     expect(actorSeat).toBeTruthy();
   });
 });
+
+describe('股份私有广播（snapshotFor）', () => {
+  it('对局中：自己股份全可见，他人只留张数；raw snapshot 不过滤', () => {
+    const room = roomWithLoggedIn(3);
+    room.start('a1', 42);
+    const mySeat = seatOfAccount(room, 'a1');
+    const view = room.snapshotFor('a1');
+    const me = view.state!.players.find((p) => p.id === mySeat)!;
+    expect(me.shares.length).toBe(2);
+    expect(me.hiddenShares).toBeUndefined();
+    for (const other of view.state!.players.filter((p) => p.id !== mySeat)) {
+      expect(other.shares).toEqual([]);
+      expect(other.hiddenShares).toEqual({ count: 2, mortgaged: 0 });
+    }
+    // 服务端内部完整快照不受影响
+    expect(room.snapshot().state!.players.every((p) => p.shares.length === 2)).toBe(true);
+  });
+
+  it('大厅阶段无状态可过滤，原样返回', () => {
+    const room = roomWithLoggedIn(3);
+    expect(room.snapshotFor('a1').state).toBeNull();
+  });
+});

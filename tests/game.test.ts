@@ -19,7 +19,7 @@ describe('建局', () => {
     }
   });
 
-  it('小弟数：3 人局每人 4 个，4/5 人局每人 3 个', () => {
+  it('小弟数：任何人数局每人 3 个', () => {
     for (const n of [3, 4, 5]) {
       const state = createGame({ playerCount: n });
       for (const p of state.players) {

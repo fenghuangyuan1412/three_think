@@ -2,8 +2,9 @@
  * 联机协议：客户端与服务端共享的纯数据类型。
  *
  * 服务端权威：规则判定只在服务端跑 applyIntent，客户端把 Intent 发过去、
- * 收回整份 GameState 快照再渲染。马尼拉是全公开信息游戏（现金、股份、船位
- * 人人可见），所以可以直接广播完整状态，无需按玩家过滤隐藏信息。
+ * 收回整份 GameState 快照再渲染。股份按房主规则私有化：对局中广播给每个人的
+ * 快照经 snapshotFor 按观看者过滤——自己的股份全可见，他人只留张数
+ * （hiddenShares），终局 game-over 时恢复全公开。
  */
 import type { GameState, Intent } from '../core/game';
 import type { PlayerId } from '../core/types';

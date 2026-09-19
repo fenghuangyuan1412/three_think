@@ -30,8 +30,10 @@ export interface Player {
   /** 现金（披索） */
   readonly cash: number;
   readonly shares: readonly ShareCard[];
-  /** 本局分到的小弟总数（3 人局 4 个，4-5 人局 3 个） */
+  /** 本局分到的小弟总数（任何人数局都是 3 个） */
   readonly accomplicesTotal: number;
+  /** 仅存在于联机按观看者过滤的广播中：他人股份隐去类型后留下的 {总张数, 抵押数} */
+  readonly hiddenShares?: { readonly count: number; readonly mortgaged: number };
 }
 
 export function findPlayer(players: readonly Player[], id: PlayerId): Player | undefined {

@@ -480,30 +480,91 @@ body {
 
 /* --------------------------------------------------------------- 规则 */
 
-.rules {
-  border-top: 1px solid var(--line-soft);
-  padding-top: 12px;
-  font-size: 12px;
+/* ----------------------------------------------------- 规则说明书 */
+
+/* 外壳不能占据 #app 网格列，否则会把 .panel 挤到视口下方 */
+.rulebook {
+  display: contents;
+}
+
+.rulebook__fab {
+  position: fixed;
+  left: 14px;
+  bottom: 14px;
+  z-index: 12;
+  font-size: 13px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: rgba(9, 32, 41, 0.88);
+  border-color: var(--line);
+  color: var(--gold-dim);
+}
+
+.rulebook__fab:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.rulebook__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 24;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(6, 22, 30, 0.86);
+  backdrop-filter: blur(3px);
+  overflow-y: auto;
+}
+
+.rulebook__overlay[hidden] {
+  display: none;
+}
+
+.rulebook__card {
+  width: min(640px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding: 26px 30px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: linear-gradient(180deg, var(--sea-800), var(--sea-850));
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+
+.rulebook__title {
+  margin: 0 0 6px;
+  font-family: var(--font-display);
+  font-size: 26px;
+  letter-spacing: 0.08em;
+  color: var(--gold);
+}
+
+.rulebook__h {
+  margin: 18px 0 8px;
+  font-size: 14px;
+  letter-spacing: 0.1em;
+  color: var(--gold-dim);
+}
+
+.rulebook__ol,
+.rulebook__ul {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 7px;
+  font-size: 13px;
+  line-height: 1.75;
   color: var(--muted);
 }
 
-.rules summary {
-  cursor: pointer;
-  color: var(--gold-dim);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-}
-
-.rules ul {
-  margin: 10px 0 0;
-  padding-left: 18px;
-  display: grid;
-  gap: 5px;
-  line-height: 1.7;
-}
-
-.rules strong {
+.rulebook__ol strong,
+.rulebook__ul strong {
   color: var(--cream);
+}
+
+.rulebook__close {
+  margin-top: 22px;
 }
 
 /* ----------------------------------------------------------- 开始界面 */
@@ -862,13 +923,6 @@ body {
 .report li .hint {
   display: block;
   font-size: 11px;
-}
-
-.rules__note {
-  margin: 8px 0 0;
-  font-size: 11px;
-  line-height: 1.6;
-  color: var(--muted);
 }
 
 /* ----------------------------------------------------- 收益一览 */
