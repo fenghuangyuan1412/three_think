@@ -480,18 +480,26 @@ body {
 
 /* --------------------------------------------------------------- 规则 */
 
-/* ----------------------------------------------------- 规则说明书 */
+/* ----------------------------------------------------- 底部入口排（说明书 + 设置） */
 
 /* 外壳不能占据 #app 网格列，否则会把 .panel 挤到视口下方 */
-.rulebook {
+.rulebook,
+.settings {
   display: contents;
 }
 
-.rulebook__fab {
+.fab-bar {
   position: fixed;
   left: 14px;
   bottom: 14px;
   z-index: 12;
+  display: flex;
+  gap: 10px;
+}
+
+.rulebook__fab,
+.settings__fab {
+  position: static;
   font-size: 13px;
   padding: 8px 16px;
   border-radius: 999px;
@@ -500,12 +508,14 @@ body {
   color: var(--gold-dim);
 }
 
-.rulebook__fab:hover {
+.rulebook__fab:hover,
+.settings__fab:hover {
   border-color: var(--gold);
   color: var(--gold);
 }
 
-.rulebook__overlay {
+.rulebook__overlay,
+.settings__overlay {
   position: fixed;
   inset: 0;
   z-index: 24;
@@ -517,11 +527,13 @@ body {
   overflow-y: auto;
 }
 
-.rulebook__overlay[hidden] {
+.rulebook__overlay[hidden],
+.settings__overlay[hidden] {
   display: none;
 }
 
-.rulebook__card {
+.rulebook__card,
+.settings__card {
   width: min(640px, 100%);
   max-height: calc(100vh - 48px);
   overflow-y: auto;
@@ -532,13 +544,57 @@ body {
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
 }
 
-.rulebook__title {
+.settings__card {
+  width: min(420px, 100%);
+}
+
+.rulebook__title,
+.settings__title {
   margin: 0 0 6px;
   font-family: var(--font-display);
   font-size: 26px;
   letter-spacing: 0.08em;
   color: var(--gold);
 }
+
+.settings__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 2px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.settings__row small {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.settings__row input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--gold);
+}
+
+.settings__actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.settings__actions .btn {
+  flex: 1;
+}
+
+.settings__home {
+  border-color: var(--danger, #b04a3f);
+  color: #e08a7e;
+}
+
 
 .rulebook__h {
   margin: 18px 0 8px;

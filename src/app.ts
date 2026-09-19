@@ -20,11 +20,13 @@ import { createDice } from './render/dice';
 import { disposeLabelTextures } from './render/labels';
 import { createScene } from './render/scene';
 import { skew } from './render/coords';
+import { goodHexCss } from './render/resources';
 import { createGamePanel, type GamePanelHandle } from './ui/game-panel';
 import { createHud } from './ui/hud';
 import { createKeepAwake } from './ui/keep-awake';
 import { createLobby, type LobbyHandle } from './ui/lobby';
 import { createRulebook } from './ui/rulebook';
+import { createSettings, loadSettings, type SettingsValues } from './ui/settings';
 import { createStartScreen, type OnlineCredentials, type StartScreenHandle } from './ui/start-screen';
 
 export function bootApp(root: HTMLElement): void {
@@ -42,7 +44,7 @@ export function bootApp(root: HTMLElement): void {
   scene.scene.add(accomplices.group);
 
   // 船只移动补间 + 骰子抛掷演出
-  const dice = createDice((good) => GOODS.find((g) => g.id === good)?.color ?? 'brown');
+  const dice = createDice(goodHexCss);
   scene.scene.add(dice.group);
   const diceCenter = skew({ x: 0, z: -6.8 });
   scene.onFrame((delta) => {
@@ -59,14 +61,30 @@ export function bootApp(root: HTMLElement): void {
   root.appendChild(hud.element);
   scene.onStats((stats) => hud.update(stats));
 
-  // 规则说明书：棋盘底部的常驻按钮（板面不放玩法说明）
+  // 底部入口排：规则说明书 + 设置（板面不放玩法说明）
+  const fabBar = document.createElement('div');
+  fabBar.className = 'fab-bar';
   const rulebook = createRulebook();
-  root.appendChild(rulebook.element);
+  fabBar.appendChild(rulebook.element);
+
+  let settings: SettingsValues = loadSettings({ animations: true, hud: true });
+  hud.element.style.display = settings.hud ? '' : 'none';
+  const settingsPanel = createSettings({
+    initial: settings,
+    onChange: (next) => {
+      settings = next;
+      hud.element.style.display = next.hud ? '' : 'none';
+    },
+    onReturnHome: returnHome,
+  });
+  fabBar.appendChild(settingsPanel.element);
+  root.appendChild(fabBar);
 
   /** 把 core 的状态同步到画面 */
   let lastDiceKey: string | null = null;
   function syncView(next: GameState, immediate = false): void {
-    board.syncBoats(next.boats, immediate);
+    const noAnim = immediate || !settings.animations;
+    board.syncBoats(next.boats, noAnim);
 
     accomplices.sync(next.placements, next.players, board, next.boats);
 
@@ -75,15 +93,25 @@ export function bootApp(root: HTMLElement): void {
       board.setPriceIndex(index, next.priceIndex[good.id] ?? 0);
     });
 
-    // 骰子演出：state.dice 变了才抛一次；开局/重连的 immediate 同步只记不播
+    // 骰子演出：state.dice 变了才抛一次；开局/重连或关闭演出时只记不播
     const diceKey = next.dice ? next.dice.map((d) => `${d.good}:${d.pips}`).join('|') : null;
-    if (next.dice && diceKey !== lastDiceKey && !immediate) dice.throw(next.dice, diceCenter);
+    if (next.dice && diceKey !== lastDiceKey && !noAnim) dice.throw(next.dice, diceCenter);
     lastDiceKey = diceKey;
   }
 
   // ---------------------------------------------------------------- 开始屏
 
   let startScreen: StartScreenHandle | null = null;
+
+  /** 当前对局（热座或联机）的清场函数，由 startHotseat / startOnline 赋值 */
+  let leaveSession: (() => void) | null = null;
+
+  /** 设置面板「退回主界面」：结束当前对局回到开始屏 */
+  function returnHome(): void {
+    leaveSession?.();
+    leaveSession = null;
+    showStartScreen();
+  }
 
   function showStartScreen(): void {
     const screen = createStartScreen({
@@ -128,6 +156,12 @@ export function bootApp(root: HTMLElement): void {
     panel = createGamePanel({ onIntent: handleIntent });
     root.appendChild(panel.element);
     panel.render(state, null);
+
+    leaveSession = () => {
+      panel?.dispose();
+      panel = null;
+      state = null;
+    };
   }
 
   // ---------------------------------------------------------------- 联机
@@ -187,6 +221,15 @@ export function bootApp(root: HTMLElement): void {
         renderBar(snapshot);
       },
     });
+
+    leaveSession = () => {
+      net.close();
+      panel?.dispose();
+      panel = null;
+      disposeLobby();
+      bar?.remove();
+      bar = null;
+    };
 
     function showReplacedNotice(): void {
       panel?.dispose();

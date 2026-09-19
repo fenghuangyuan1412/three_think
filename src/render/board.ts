@@ -60,6 +60,7 @@ import {
 import { createBillboardLabel, createFlatLabel } from './labels';
 import { PALETTE, goldMaterial, standardMaterial } from './palette';
 import { createLaneStripTexture, createPriceTrackTexture } from './textures';
+import { ResourceBag, goodHex } from './resources';
 
 /** 船的缩放：船体原长在 1.6 世界单位左右，缩到略大于一个航道格 */
 export const BOAT_SCALE = 0.85;
@@ -87,28 +88,13 @@ export interface BoardView {
   dispose(): void;
 }
 
-/** 货物色（与规则书 Abb. 2b 的四种颜色一致） */
-const GOOD_COLORS: Record<string, number> = {
-  nutmeg: 0x7a4a2b,
-  silk: 0x35558f,
-  ginseng: 0xc9b27a,
-  jade: 0x2f7a52,
-};
-
 export function createBoard(): BoardView {
   const group = new THREE.Group();
   group.name = 'board';
 
-  const geometries: THREE.BufferGeometry[] = [];
-  const materials: THREE.Material[] = [];
-  const geo = <T extends THREE.BufferGeometry>(g: T): T => {
-    geometries.push(g);
-    return g;
-  };
-  const mat = <T extends THREE.Material>(m: T): T => {
-    materials.push(m);
-    return m;
-  };
+  const bag = new ResourceBag();
+  const geo = bag.geo.bind(bag);
+  const mat = bag.mat.bind(bag);
   /** 挂一个平贴标签（自动记录几何体与材质以便释放） */
   const flatLabel = (
     parent: THREE.Object3D,
@@ -120,8 +106,8 @@ export function createBoard(): BoardView {
   ): THREE.Mesh => {
     const label = createFlatLabel(text, opts);
     label.position.set(x, y, z);
-    geometries.push(label.geometry);
-    materials.push(label.material as THREE.Material);
+    bag.geo(label.geometry);
+    bag.mat(label.material as THREE.Material);
     parent.add(label);
     return label;
   };
@@ -135,7 +121,7 @@ export function createBoard(): BoardView {
   ): THREE.Sprite => {
     const sprite = createBillboardLabel(text, opts);
     sprite.position.set(x, y, z);
-    materials.push(sprite.material as THREE.Material);
+    bag.mat(sprite.material as THREE.Material);
     parent.add(sprite);
     return sprite;
   };
@@ -469,7 +455,7 @@ export function createBoard(): BoardView {
   const wareTiles: THREE.Object3D[][] = boats.map((boat) => {
     const parts = GOODS.map((good) => {
       const load = getWareLoad(good.id);
-      const color = GOOD_COLORS[good.id] ?? 0x888888;
+      const color = goodHex(good.id);
 
       const tile = new THREE.Mesh(
         geo(new THREE.BoxGeometry(0.74, 0.06, 0.66)),
@@ -488,7 +474,7 @@ export function createBoard(): BoardView {
       });
       label.position.set(0, 1.3 / BOAT_SCALE, 0.1 / BOAT_SCALE);
       label.visible = false;
-      materials.push(label.material as THREE.Material);
+      bag.mat(label.material as THREE.Material);
       boat.group.add(label);
 
       return [tile, label] as THREE.Object3D[];
@@ -679,8 +665,7 @@ export function createBoard(): BoardView {
     dispose() {
       for (const boat of boats) boat.dispose();
       pirateBoat.dispose();
-      for (const g of geometries) g.dispose();
-      for (const m of materials) m.dispose();
+      bag.dispose();
       group.clear();
     },
   };

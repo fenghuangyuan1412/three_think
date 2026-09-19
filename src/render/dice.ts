@@ -80,13 +80,7 @@ interface Die {
 const THROW_SECONDS = 1.05;
 const REST_SECONDS = 3.2;
 
-const FALLBACK_COLORS: Record<string, string> = {
-  brown: '#7a4a2b',
-  blue: '#35558f',
-  tan: '#c9b27a',
-  green: '#2f7a52',
-};
-
+/** goodColorOf 由 app.ts 注入（render/resources 的 goodHexCss，颜色单一来源） */
 export function createDice(goodColorOf: (good: string) => string): DiceView {
   const group = new THREE.Group();
   group.name = 'dice';
@@ -164,7 +158,7 @@ export function createDice(goodColorOf: (good: string) => string): DiceView {
       rolls.forEach((roll, i) => {
         const die = dies[i];
         if (!die) return;
-        recolor(die, FALLBACK_COLORS[goodColorOf(roll.good)] ?? '#4b3623');
+        recolor(die, goodColorOf(roll.good) || '#4b3623');
         const angle = (i / rolls.length) * Math.PI * 2 + rand();
         const spread = 0.55 + rand() * 0.3;
         die.start.set(

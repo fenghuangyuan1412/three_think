@@ -6,6 +6,7 @@
  */
 import * as THREE from 'three';
 import { PALETTE, standardMaterial } from './palette';
+import { ResourceBag } from './resources';
 
 export interface BoatHandle {
   readonly group: THREE.Group;
@@ -17,17 +18,9 @@ export const BOAT_WATERLINE_Y = 0.16;
 
 export function createBoat(): BoatHandle {
   const group = new THREE.Group();
-  const geometries: THREE.BufferGeometry[] = [];
-  const materials: THREE.Material[] = [];
-
-  const track = <T extends THREE.BufferGeometry>(g: T): T => {
-    geometries.push(g);
-    return g;
-  };
-  const trackMat = <T extends THREE.Material>(m: T): T => {
-    materials.push(m);
-    return m;
-  };
+  const bag = new ResourceBag();
+  const track = bag.geo.bind(bag);
+  const trackMat = bag.mat.bind(bag);
 
   const hullMat = trackMat(standardMaterial(PALETTE.hull, { roughness: 0.86 }));
   const deckMat = trackMat(standardMaterial(PALETTE.deck, { roughness: 0.8 }));
@@ -83,8 +76,7 @@ export function createBoat(): BoatHandle {
   return {
     group,
     dispose() {
-      for (const g of geometries) g.dispose();
-      for (const m of materials) m.dispose();
+      bag.dispose();
     },
   };
 }
